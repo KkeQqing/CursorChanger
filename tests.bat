@@ -30,6 +30,12 @@ REM ---- run A: normal ----
 SET "RA=!ERRORLEVEL!"
 ECHO [RUN] normal      exit=!RA!
 
+REM ---- run C: an unknown mode must be refused, never fall back to the suite ----
+REM 起因是实测踩到的假成功：旧 exe 不认识 --probe-registry，把它当普通套件跑完返回 0。
+"%TESTS%" --probe-typo > "%OUTDIR%\tests-unknownmode.log" 2>&1
+SET "RC=!ERRORLEVEL!"
+ECHO [RUN] unknown-mode exit=!RC!
+
 REM ---- run B: force-fail (must be non-zero) ----
 "%TESTS%" --force-fail > "%OUTDIR%\tests-forcefail.log" 2>&1
 SET "RB=!ERRORLEVEL!"
@@ -44,9 +50,15 @@ TYPE "%OUTDIR%\tests-forcefail.log"
 
 IF NOT "!RA!"=="0" GOTO :L_FAIL_NORMAL_GREEN
 IF "!RB!"=="0" GOTO :L_FAIL_RED_PROOF
+IF NOT "!RC!"=="2" GOTO :L_FAIL_UNKNOWN_MODE
 
-ECHO [ OK ] harness self-proof passed: green when honest, red when sabotaged
+ECHO [ OK ] harness self-proof passed: green when honest, red when sabotaged,
+ECHO        and an unknown mode is refused instead of quietly passing
 EXIT /B 0
+
+:L_FAIL_UNKNOWN_MODE
+ECHO [FAIL] unknown mode must exit 2, got !RC! - the runner falls back to the suite
+EXIT /B 6
 
 :L_FAIL_PROBE
 ECHO [FAIL] L1 probe mode failed, see tests-probe.log above

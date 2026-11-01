@@ -134,11 +134,25 @@ void harness_detects_failure(Runner& runner) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    const bool force_fail = (argc >= 2 && std::strcmp(argv[1], "--force-fail") == 0);
-    if (argc >= 2 && std::strcmp(argv[1], "--probe-l1") == 0) {
-        // 实测模式：打印 Windows 加载器的真实观测值，不跑断言、不改任何系统状态
-        cs::test::probe_l1_load(stdout);
-        return 0;
+    // 运行模式必须**封闭**：未知参数一律拒绝，绝不回落到默认套件。
+    // 实测踩因：一次编译失败后跑的是旧 exe，它不认识 --probe-registry，
+    // 于是把拼错的 probe 名当成普通测试跑完并返回 0 —— 一个假的成功退出码。
+    bool force_fail = false;
+    if (argc >= 2) {
+        const std::string_view mode(argv[1] ? argv[1] : "");
+        if (mode == "--force-fail") {
+            force_fail = true;
+        } else if (mode == "--probe-l1") {
+            cs::test::probe_l1_load(stdout);   // 打印加载器真值；不改任何系统状态
+            return 0;
+        } else if (mode == "--probe-registry") {
+            cs::test::probe_registry_names(stdout);  // 只读：KEY_READ，不写不删不广播
+            return 0;
+        } else {
+            std::fprintf(stderr, "error: unknown test mode '%s'\n", std::string(mode).c_str());
+            std::fprintf(stderr, "available modes: --force-fail | --probe-l1 | --probe-registry\n");
+            return 2;
+        }
     }
 
     Runner runner;
@@ -158,6 +172,7 @@ int main(int argc, char** argv) {
     cs::test::register_ir_negative_cases(runner);
     cs::test::register_container_cases(runner);
     cs::test::register_l1_cases(runner);
+    cs::test::register_registry_cases(runner);
 
     if (force_fail) {
         std::printf("[MODE] force-fail: injecting a case that must fail\n");

@@ -20,4 +20,8 @@ void register_container_cases(Runner& runner);
 void probe_l1_load(std::FILE* out);
 void register_l1_cases(Runner& runner);
 
+// tests_registry_probe.cpp：只读探查注册表光标方案键，为 U1 取佐证（不核销 U1）
+void probe_registry_names(std::FILE* out);
+void register_registry_cases(Runner& runner);
+
 }  // namespace cs::test
