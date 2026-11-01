@@ -1,4 +1,5 @@
-// src/app/main.cpp — 入口（M0：无窗口骨架，仅动词分发）
+// src/app/main.cpp — 入口：只负责分发，业务全在 apply/ 与 selfcheck/（§2 层规则）
+#include "app/verbs.h"
 #include "core/cli.h"
 #include "core/version.h"
 
@@ -15,12 +16,13 @@ void print_usage() {
     std::printf("cursorswitch V%s\n", cs::core::kVersion);
     std::printf("usage:\n");
     for (std::size_t i = 0; i < n; ++i) {
-        // 动词名/说明用 string_view 承载，打印前物化成 std::string 保证 c_str() 有效。
         const std::string name(table[i].name);
         const std::string summary(table[i].summary);
-        std::printf("  --%-8s %s\n", name.c_str(), summary.c_str());
+        const std::string arg = table[i].arity == cs::core::Arity::NeedDir ? " <dir>" : "";
+        std::printf("  --%-12s%s %s\n", name.c_str(), arg.c_str(), summary.c_str());
     }
-    std::printf("milestone: M0 skeleton. convert / apply / restore land in M1-M4.\n");
+    std::printf("\nMilestones: .cur passthrough + apply/restore live now; PNG in M3, SVG in M4, window in M5.\n");
+    std::printf("Note: --live-check restores even if a middle step fails (RAII guard).\n");
 }
 
 }  // namespace
@@ -37,11 +39,24 @@ int main(int argc, char** argv) {
         print_usage();
         return 2;
     }
+    if (p.status == Status::MissingOperand) {
+        std::fprintf(stderr, "error: this verb needs a skin directory, e.g. --apply .\\skin\n");
+        return 2;
+    }
 
+    const std::string_view dir = p.operand;
     switch (p.verb) {
     case Verb::Version:
         std::printf("cursorswitch V%s  (%s)\n", cs::core::kVersion, cs::core::kBuildFlags);
         return 0;
+    case Verb::Apply:
+        return cs::app::run_apply(dir);
+    case Verb::Restore:
+        return cs::app::run_restore();
+    case Verb::Reset:
+        return cs::app::run_reset();
+    case Verb::LiveCheck:
+        return cs::app::run_live_check(dir);
     case Verb::Help:
     case Verb::None:
         print_usage();

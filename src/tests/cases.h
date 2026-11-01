@@ -1,7 +1,9 @@
 // src/tests/cases.h — 跨测试文件注册函数（保持 tests_main 是唯一 main）
 #pragma once
 
+#include <cstdint>
 #include <cstdio>
+#include <string>
 
 #include "test/harness.h"
 
@@ -26,5 +28,11 @@ void register_registry_cases(Runner& runner);
 
 // tests_m2.cpp：注册表写侧 / 三态基线 / 还原 / 端到端流水线，全部走沙箱键
 void register_apply_cases(Runner& runner);
+
+// emit_skin.cpp：造一套真机测试皮肤（15 槽 x 16/32/48），供 --live-check 使用。
+// 返回写出的文件数；失败返回 false。目录参数用 wstring（Windows 路径）。
+bool emit_live_skin(const std::wstring& dir, std::uint32_t& files_out);
+// 命令行入口用：把本机 ANSI 码页的参数转成宽字符路径（ASCII 路径无损；非 ASCII 属已知限制）
+bool emit_live_skin_narrow(const char* dir, std::uint32_t& files_out);
 
 }  // namespace cs::test

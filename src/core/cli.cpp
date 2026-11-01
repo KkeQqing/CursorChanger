@@ -27,11 +27,25 @@ std::string_view strip_dashes(std::string_view s) {
 
 const VerbSpec* verb_table(std::size_t& count) {
     static constexpr VerbSpec kTable[] = {
-        {{"help"}, {Verb::Help}, {{"print usage and milestone status"}}},
-        {{"version"}, {Verb::Version}, {{"print version and build flags"}}},
+        {{"help"}, {Verb::Help}, {{"print usage and milestone status"}}, {Arity::None}},
+        {{"version"}, {Verb::Version}, {{"print version and build flags"}}, {Arity::None}},
+        {{"apply"}, {Verb::Apply}, {{"apply a skin dir to the system pointers"}}, {Arity::NeedDir}},
+        {{"restore"}, {Verb::Restore}, {{"restore the pre-apply baseline snapshot"}}, {Arity::None}},
+        {{"reset"}, {Verb::Reset}, {{"clear our values and fall back to the OS default scheme"}}, {Arity::None}},
+        {{"live-check"}, {Verb::LiveCheck},
+         {{"apply -> L2/L3 verify -> restore, always restores"}}, {Arity::NeedDir}},
     };
     count = sizeof(kTable) / sizeof(kTable[0]);
     return kTable;
+}
+
+Arity verb_arity(Verb v) {
+    std::size_t n = 0;
+    const VerbSpec* t = verb_table(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        if (t[i].verb == v) return t[i].arity;
+    }
+    return Arity::None;
 }
 
 Parsed parse_args(int argc, const char* const* argv) {
@@ -50,10 +64,16 @@ Parsed parse_args(int argc, const char* const* argv) {
     std::size_t n = 0;
     const VerbSpec* table = verb_table(n);
     for (std::size_t i = 0; i < n; ++i) {
-        if (fold_equal(token, table[i].name)) {
-            out.verb = table[i].verb;
-            return out;
+        if (!fold_equal(token, table[i].name)) continue;
+        out.verb = table[i].verb;
+        if (table[i].arity == Arity::NeedDir) {
+            if (argc < 3 || argv[2] == nullptr || argv[2][0] == '\0') {
+                out.status = Status::MissingOperand;
+                return out;
+            }
+            out.operand = std::string_view(argv[2]);
         }
+        return out;
     }
     out.status = Status::Unknown;
     out.unknown = token;

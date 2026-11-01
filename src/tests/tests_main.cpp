@@ -15,6 +15,7 @@
 #include <string_view>
 
 using cs::core::Parsed;
+using cs::core::Arity;
 using cs::core::Status;
 using cs::core::Verb;
 using cs::core::VerbSpec;
@@ -57,11 +58,34 @@ void cli_help_and_version(Runner& runner) {
 // ---------- CLI 解析：负对照 ----------
 
 void cli_unknown_verb_is_rejected(Runner& runner) {
-    const char* a[] = {"x", "--apply"};  // apply 属 M2，现在必须判未知
+    const char* a[] = {"x", "--convert"};  // convert 尚未实现，也不在表里
     const Parsed p = cs::core::parse_args(2, a);
     CHECK(p.status == Status::Unknown);
-    CHECK(p.unknown == std::string_view("apply"));
+    CHECK(p.unknown == std::string_view("convert"));
     CHECK(p.verb == Verb::None);
+}
+
+// 参数个数由表声明（Arity），所以「漏了目录」和「动词不存在」是两种不同错误
+void cli_missing_operand(Runner& runner) {
+    const char* a[] = {"x", "--apply"};
+    const Parsed p = cs::core::parse_args(2, a);
+    CHECK(p.status == Status::MissingOperand);
+    CHECK(p.verb == Verb::Apply);   // 认得动词，只是缺参数
+    CHECK(p.operand.empty());
+}
+
+void cli_operand_captured(Runner& runner) {
+    const char* a[] = {"x", "--apply", "build\\liveskin"};
+    const Parsed p = cs::core::parse_args(3, a);
+    CHECK(p.status == Status::Ok);
+    CHECK(p.verb == Verb::Apply);
+    CHECK(p.operand == std::string_view("build\\liveskin"));
+    // 无参数的动词不该吞掉后面的 token（--restore 后跟目录不算错，只是忽略）
+    const char* b[] = {"x", "restore"};
+    CHECK(cs::core::parse_args(2, b).status == Status::Ok);
+    CHECK(cs::core::verb_arity(Verb::Apply) == Arity::NeedDir);
+    CHECK(cs::core::verb_arity(Verb::Restore) == Arity::None);
+    CHECK(cs::core::verb_arity(Verb::LiveCheck) == Arity::NeedDir);
 }
 
 void cli_bare_dashes_mean_no_verb(Runner& runner) {
@@ -142,6 +166,19 @@ int main(int argc, char** argv) {
         const std::string_view mode(argv[1] ? argv[1] : "");
         if (mode == "--force-fail") {
             force_fail = true;
+        } else if (mode == "--emit-skin") {
+            // 脚手架：造一套真机测试皮肤给 app 的 --live-check 用（不跑断言）
+            if (argc < 3) {
+                std::fprintf(stderr, "error: --emit-skin needs a directory\n");
+                return 2;
+            }
+            std::uint32_t files = 0;
+            if (!cs::test::emit_live_skin_narrow(argv[2], files)) {
+                std::fprintf(stderr, "error: emit-skin failed\n");
+                return 1;
+            }
+            std::printf("EMIT files=%u dir=%s\n", files, argv[2]);
+            return 0;
         } else if (mode == "--probe-l1") {
             cs::test::probe_l1_load(stdout);   // 打印加载器真值；不改任何系统状态
             return 0;
@@ -150,7 +187,8 @@ int main(int argc, char** argv) {
             return 0;
         } else {
             std::fprintf(stderr, "error: unknown test mode '%s'\n", std::string(mode).c_str());
-            std::fprintf(stderr, "available modes: --force-fail | --probe-l1 | --probe-registry\n");
+            std::fprintf(stderr,
+                         "available modes: --force-fail | --probe-l1 | --probe-registry | --emit-skin <dir>\n");
             return 2;
         }
     }
@@ -159,6 +197,8 @@ int main(int argc, char** argv) {
     runner.add("cli_no_args", &cli_no_args);
     runner.add("cli_help_and_version", &cli_help_and_version);
     runner.add("cli_unknown_verb_is_rejected", &cli_unknown_verb_is_rejected);
+    runner.add("cli_missing_operand", &cli_missing_operand);
+    runner.add("cli_operand_captured", &cli_operand_captured);
     runner.add("cli_bare_dashes_mean_no_verb", &cli_bare_dashes_mean_no_verb);
     runner.add("cli_prefix_of_verb_is_not_a_match", &cli_prefix_of_verb_is_not_a_match);
     runner.add("table_wellformed", &table_wellformed);

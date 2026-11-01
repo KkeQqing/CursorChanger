@@ -12,6 +12,9 @@
 #include "apply/baseline.h"
 #include "apply/pipeline.h"
 #include "apply/registry.h"
+#include "core/claim.h"
+#include "core/cur_reader.h"
+#include "selfcheck/l1.h"
 #include "core/cur_writer.h"
 #include "core/ir.h"
 #include "core/slots.h"
@@ -387,6 +390,53 @@ void register_apply_cases(Runner& runner) {
             CHECK(read_absent(Root::CurrentUser, kSandbox, wname(t[i].registry_name).c_str()));
         }
         tear_down_sandbox();
+    });
+
+    runner.add("emit_skin_covers_all_slots_with_frame_hotspots", [](Runner& runner) {
+        // 这套皮肤是 --live-check 的输入，坏了会让真机验证变成自欺，所以先在这里机器验一遍。
+        std::uint32_t files = 0;
+        CHECK(emit_live_skin(L"build\\skin-check", files));
+        std::size_t n = 0;
+        const SlotSpec* table = slot_table(n);
+        CHECK(files == n);            // 15 个槽一个都不许漏（漏了真机验证就是假绿）
+        CHECK(table != nullptr);
+
+        std::size_t n_ali = 0;
+        const AliasSpec* ali = alias_table(n_ali);
+        int l1_ok = 0, hotspot_distinct = 0;
+        for (std::size_t i = 0; i < n; ++i) {
+            // 用该槽第一条别名拼文件名：顺带验「别名 -> 槽位 -> 文件」这条链闭环
+            std::string alias;
+            for (std::size_t k = 0; k < n_ali; ++k) {
+                if (ali[k].slot == table[i].id) { alias.assign(ali[k].alias.begin(), ali[k].alias.end()); break; }
+            }
+            std::wstring path = L"build\\skin-check\\";
+            for (char c : alias) path.push_back(static_cast<wchar_t>(static_cast<unsigned char>(c)));
+            path += L".cur";
+
+            std::vector<std::uint8_t> bytes;
+            CHECK(read_whole_file(path, bytes));
+            CursorInfo info;
+            const bool parsed = read_cursor_info(bytes.data(), bytes.size(), info) == ReadStatus::Ok;
+            CHECK(parsed);
+            if (!parsed) continue;
+            const selfcheck::L1Result l1 = selfcheck::l1_load_and_probe(path.c_str());
+            if (l1.loaded) ++l1_ok;
+            CHECK(info.count == 3);   // 16/32/48 三帧（D8）
+
+            // 帧级热点：同一份文件里三个目录项的热点**不应全相同**
+            // （中心类规则在 16/32/48 上必然不同；左上类规则 x 同为 0 但 y 也同为 0，
+            //  所以这里只要求「存在至少一对不同」而不是「全都不同」—— 别写过强）
+            bool any_diff = false;
+            for (std::size_t a = 0; a + 1 < info.entries.size(); ++a) {
+                const auto& x = info.entries[a];
+                const auto& y = info.entries[a + 1];
+                if (x.hotspot_x != y.hotspot_x || x.hotspot_y != y.hotspot_y) any_diff = true;
+            }
+            if (any_diff) ++hotspot_distinct;
+        }
+        CHECK(l1_ok == n);            // 每个文件都要被真实加载器接受
+        CHECK(hotspot_distinct > 0);  // 帧级换算确实用上了（不是同一个值抄三遍）
     });
 
     runner.add("m2_apply_refuses_when_baseline_is_unreadable", [](Runner& runner) {
