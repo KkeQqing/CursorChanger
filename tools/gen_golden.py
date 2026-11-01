@@ -30,12 +30,12 @@ MIN_ENTRY_BYTES = 64         # writer.min_dir_gap_bytes
 
 # ---------- 夹具规格（top-down，行 0 在最上；BGRA 且预乘） ----------
 SPEC = {
-    "hotspot": [1, 1],
     "frames": [
         {
             "name": "4x4",
             "width": 4,
             "height": 4,
+            "hotspot": [1, 1],   # 帧级热点（U15）：容器每个目录项各自带一个
             # 非对称图案：上 3 行不透明、底行半透明、col0 全透明、(2,1) 半透明
             # —— 只有非对称才能同时抓住底向上/底向上偏移类错误
             "rows": [
@@ -49,6 +49,7 @@ SPEC = {
             "name": "8x8",
             "width": 8,
             "height": 8,
+            "hotspot": [1, 1],
             # 半透明纯灰：premultiplied 下 BGR == A == 128
             "solid": [128, 128, 128, 128],
         },
@@ -84,13 +85,13 @@ def frame_top_down(w, h, rows=None, solid=None):
 
 
 def build(spec):
-    hx, hy = spec["hotspot"]
     frames = spec["frames"]
 
-    entries = []      # (w, h, top_down_pixels)
+    entries = []      # (w, h, top_down_pixels, (hx, hy))
     for f in frames:
         w, h = f["width"], f["height"]
         assert 0 < w <= MAX_DIMENSION and 0 < h <= MAX_DIMENSION
+        hx, hy = f["hotspot"]          # 帧级：每个目录项写自己那一个
         assert hx < w and hy < h, "hotspot out of bounds"
         px = frame_top_down(w, h, f.get("rows"), f.get("solid"))
         assert len(px) == w * h
@@ -99,10 +100,10 @@ def build(spec):
             assert b <= a and g <= a and r <= a, "not premultiplied"
         # 至少一个可见像素（H10）
         assert any(p[3] != 0 for p in px), "fully transparent"
-        entries.append((w, h, px))
+        entries.append((w, h, px, (hx, hy)))
 
     # 面积升序（H8）
-    areas = [w * h for w, h, _ in entries]
+    areas = [w * h for w, h, _, _ in entries]
     assert areas == sorted(areas), "frames not ascending by area"
     assert len(entries) <= 12, "too many frames"
 
@@ -116,18 +117,18 @@ def build(spec):
 
     offset = DIR_HEADER_BYTES + DIR_ENTRY_BYTES * len(entries)
     dir_rows = []
-    for (w, h, _), n in zip(entries, [frame_rows_in_res(w, h) for w, h, _ in entries]):
-        dir_rows.append((w, h, n, offset))
+    for (w, h, _, _), n in zip(entries, [frame_rows_in_res(w, h) for w, h, _, _ in entries]):
+        dir_rows.append((w, h, n, offset, hx, hy))
         offset += n
 
-    for (w, h, _), (dw, dh, n, off) in zip(entries, dir_rows):
-        blob += bytes([size_byte(w), size_byte(h), 0, 0])
+    for (_, _, _, _), (dw, dh, n, off, hx, hy) in zip(entries, dir_rows):
+        blob += bytes([size_byte(dw), size_byte(dh), 0, 0])
         blob += hx.to_bytes(2, "little")
         blob += hy.to_bytes(2, "little")
         blob += n.to_bytes(4, "little")
         blob += off.to_bytes(4, "little")
 
-    for (w, h, px), (_, _, n, _) in zip(entries, dir_rows):
+    for (w, h, px, _), (_, _, n, _, _, _) in zip(entries, dir_rows):
         and_bytes = and_row_bytes(w) * h
         blob += DIB_BYTES.to_bytes(4, "little")
         blob += w.to_bytes(4, "little")
@@ -226,8 +227,8 @@ def main():
         "bytes": len(blob),
         "sha256": digest,
         "action": action,
-        "frames": [{"w": w, "h": h, "bytes_in_res": n, "offset": o} for w, h, n, o in dir_rows],
-        "hotspot": SPEC["hotspot"],
+        "frames": [{"w": w, "h": h, "bytes_in_res": n, "offset": o, "hotspot": [hx, hy]}
+                   for w, h, n, o, hx, hy in dir_rows],
     }, ensure_ascii=False))
     return 0
 

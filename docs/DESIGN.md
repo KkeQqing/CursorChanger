@@ -186,6 +186,7 @@ struct Hotspot {            // core 自带类型，不用 Win32 的 POINT（§2 
 
 struct Frame {
     uint32_t width, height;                 // 1..256；0 的编码约定只允许出现在 writer 内部
+    Hotspot hotspot;                        // 帧级：容器每个目录项本来就有自己的热点
     std::vector<uint8_t> pixels;            // BGRA32, **premultiplied**
     // 行序：index 0 = 最上一行（top-down）。底向上翻转是 CUR 容器的事，见 H11。
     // 行内无填充：每行恰为 width*4 字节，4 字节对齐由 writer 在 AND 掩码侧负责。
@@ -194,17 +195,22 @@ struct Frame {
 struct CursorSpec {
     SlotId slot;                            // 强类型，禁止用裸 int 传「槽位」（参数语义防错）
     std::vector<Frame> frames;              // 至少 1 个；按 (height*width) 升序
-    Hotspot hotspot;                        // v1：整份 spec 一个 hotspot；passthrough 保留原文件帧级值
     SourceKind source_kind;
 };
 ```
+
+**热点为什么必须在帧级（U15 的实测结论，不是审美选择）**：
+`LoadImage(exact N)` 回读到的热点**逐字等于**该帧目录项里写的值，加载器**不会**在帧之间换算热点
+（多帧文件写 (1,1)，取 16 与取 48 都回读 (1,1)）；只有把帧重采样到系统默认尺寸时 OS 才按比例缩放。
+因此若一份 spec 只有一个绝对热点，16/32/48 三档里必然有大帧的视觉热点是错的。
+产出多帧的通道（PNG/SVG）必须以**参考帧**的热点为基准，按 `round(v * dim / ref_dim)` 逐帧换算后写入。
 
 字段级不变量（`CurWriter` 入口全部拒绝，不修正、不夹带）：
 
 - `frames` 非空；每帧 `width/height ∈ [1,256]`。
 - `pixels.size() == width*height*4`。
 - **预乘可检**：每个像素的 B/G/R 三通道都必须 `<= A`（预乘的必要条件）。不满足即判「忘了预乘或算错了」并拒收 —— 这是该错误唯一能机器发现的形态（U13）。
-- `hotspot.x < width && hotspot.y < height`（对**每一帧**成立，H5）。
+- `frame.hotspot.x < frame.width && frame.hotspot.y < frame.height`（H5，逐帧独立成立）。
 - 全帧 alpha 全为 0 的输入**拒收**（§9.1 负对照 1）：产出「合法但看不见」的光标是缺陷，不是结果。
 - 帧数上限、目录偏移等容器级约束见 §6。
 
@@ -567,7 +573,8 @@ CursorSwitch/
 | U12 | `.cur` 目录项里 hotspot 占据 `wPlanes/wBitCount` 两个 WORD，且 `LoadCursorFromFileW` 读的就是这两个字段 | **已核销（M2a 实测）**：hotspot 位于目录项的两个 WORD，被真实加载器接受。判据：`LoadImage(exact 16x16)` 回读 hotspot 逐字等于写入值 (4,4)；golden 的 (1,1) 在 4x4 / 8x8 两帧上均回读 (1,1)。取写位置：目录项偏移 4–5 / 6–7（即 ICO 布局里 planes/bitcount 的同一字节位） | M2a 已用 `GetIconInfo` 实测核销 |
 | U13 | 「每通道 `<= alpha`」作为预乘必要条件，是否会把合法输入误拒（如上游输出 alpha=255 之外的边界） | **未验证** | M1 记录误拒率；若误拒则改为告警 + 就地预乘 |
 | U14 | `BI_RGB` 下 `biSizeImage` 写 XOR 字节数是否被各加载路径接受（0 也常见） | **已核销（M2a 实测）**：`biSizeImage` 写 XOR 实际长度被加载器接受（golden 与三个单帧样本均 `loaded=1`，reader 侧仍不依赖该字段） | M2a L1 实测 |
-| U15 | 多帧时单一 hotspot 的缩放规则 | **已核销（M2a 实测）**：加载器在**帧之间不做** hotspot 换算（多帧文件 hotspot 写 (1,1)，指名取 16 与取 48 都回读 (1,1)）；只有重采样到系统默认尺寸时才按比例缩放（(4,4)@16 → (8,8)@32）。因此多帧必须**逐帧写缩放后的热点**，当前 writer 把同一绝对值写进每一帧目录项 → 大帧视觉热点错位 | M3 开工前把 `CursorSpec` 改成帧级 hotspot（容器本就支持，属数据层改动） |
+| U15 | 多帧时单一 hotspot 的缩放规则 | **已核销（M2a 实测）**：加载器在**帧之间不做** hotspot 换算（多帧文件 hotspot 写 (1,1)，指名取 16 与取 48 都回读 (1,1)）；只有重采样到系统默认尺寸时才按比例缩放（(4,4)@16 → (8,8)@32）。因此多帧必须**逐帧写缩放后的热点**。**已落地（M2b）**：`CursorSpec` 改为帧级 `Frame::hotspot`，新增 `scale_hotspot()` 按 `round(v*to/from)` 逐帧换算。
+回归证据：把换算退化为照抄原值后 `l1_system_loader_resamples_and_scales_hotspot` 变红 2 条（48 帧期望 (3,3) 未达 + `m16 != m48` 结构性断言） | 已落地 |
 | U16 | AND 掩码行按 `max(对齐值, 128)` **过填充**，系统加载器是否照单全收 | **已核销（M2a 实测）**：AND 行过填充 `max(对齐值,128)` 被加载器接受 —— 两套非系统尺寸的 golden 帧（4x4 / 8x8，掩码行距 128）均可加载并按帧导航 | M2a L1 实测 |
 | U17 | `NWPen`（手写笔）的正确热点语义，以及它是否受「指针大小」体系管辖 | **未验证**：该槽是 M2b 实测才发现的，原计划完全没有；默认热点目前猜的是中心 | M5 目测校正 |
 | U18 | `CursorBaseSize` 是否就是「设置→辅助功能→鼠标指针→大小」滑条的存储位置 | **未验证（强线索）**：M2b 在同一个键下观测到它（REG_DWORD）。若成立，§7.4 的抢占探测可以直接读这个值，比现在的行为探测更早更准 | M2b 下一步：改滑条前后各读一次比对 |

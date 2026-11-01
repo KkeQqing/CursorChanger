@@ -28,10 +28,10 @@ CursorSpec solid_spec(uint32_t dim, Hotspot hs) {
     CursorSpec s;
     s.slot = SlotId::Arrow;
     s.source_kind = SourceKind::Png;
-    s.hotspot = hs;
     Frame f;
     f.width = dim;
     f.height = dim;
+    f.hotspot = hs;  // 帧级热点（U15）
     f.pixels.assign(static_cast<std::size_t>(dim) * dim * 4u, 255);  // 全不透明白：BGR<=A 成立
     s.frames.push_back(f);
     return s;
@@ -98,6 +98,7 @@ void probe_l1_load(std::FILE* out) {
             Frame f;
             f.width = dim;
             f.height = dim;
+            f.hotspot = scale_hotspot(Hotspot{1, 1}, 16, dim);  // 逐帧换算，不是一值抄三遍
             f.pixels.assign(static_cast<std::size_t>(dim) * dim * 4u, 255);
             s.frames.push_back(f);
         }
@@ -185,11 +186,18 @@ void register_l1_cases(Runner& runner) {
         CHECK(a.hotspot_x == scaled(4, 16, sys));
         CHECK(a.hotspot_y == scaled(4, 16, sys));
 
-        // 反向对照：同一份多帧文件，指名取 48 时**不得**被换算成系统尺寸
+        // 反向对照：同一份多帧文件，指名取 48 时**不得**被换算成系统尺寸；
+        // 且热点必须是自己那一帧的换算值（1@16 -> 3@48），不是抄来的同一个数。
+        // 这条断言在 U15 修复前是 "== 1"，它当时"过"就是因为各帧热点相同 —— 正是测不出问题的形态。
         const cs::selfcheck::L1Result m48 = cs::selfcheck::l1_load_frame(kProbeMulti, 48, 48);
         CHECK(m48.loaded);
         CHECK(m48.width == 48 && m48.height == 48);
-        CHECK(m48.hotspot_x == 1 && m48.hotspot_y == 1);
+        CHECK(m48.hotspot_x == 3 && m48.hotspot_y == 3);
+
+        const cs::selfcheck::L1Result m16 = cs::selfcheck::l1_load_frame(kProbeMulti, 16, 16);
+        CHECK(m16.loaded);
+        CHECK(m16.hotspot_x == 1 && m16.hotspot_y == 1);  // 参考帧原值
+        CHECK(m16.hotspot_x != m48.hotspot_x);            // 帧间确实不同 = 逐帧换算而非一值抄三遍
     });
 
     runner.add("l1_frames_are_size_navigable", [](Runner& runner) {

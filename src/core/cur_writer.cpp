@@ -107,8 +107,8 @@ WriteError write_cursor_bytes(const CursorSpec& spec, std::vector<uint8_t>& out,
         out.insert(out.end(), size_byte(f.height));
         out.insert(out.end(), 0);  // color_count
         out.insert(out.end(), 0);  // reserved
-        put_u16(out, spec.hotspot.x);
-        put_u16(out, spec.hotspot.y);
+        put_u16(out, f.hotspot.x);   // 帧级热点（U15）：每个目录项写自己那一个
+        put_u16(out, f.hotspot.y);
         put_u32(out, static_cast<uint32_t>(entry_bytes[i]));
         put_u32(out, offset);
         offset += static_cast<uint32_t>(entry_bytes[i]);

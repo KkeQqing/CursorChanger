@@ -48,11 +48,11 @@ CursorSpec fixture_spec() {
     CursorSpec s;
     s.slot = SlotId::Arrow;
     s.source_kind = SourceKind::Png;
-    s.hotspot = Hotspot{1, 1};
 
     Frame f0;
     f0.width = kW0;
     f0.height = kH0;
+    f0.hotspot = Hotspot{1, 1};   // 帧级热点（U15）
     f0.pixels.resize(static_cast<std::size_t>(kW0) * kH0 * 4u);
     for (std::size_t i = 0; i < kW0 * kH0; ++i) {
         f0.pixels[i * 4u + 0] = kFrame0[i].b;
@@ -64,6 +64,7 @@ CursorSpec fixture_spec() {
     Frame f1;
     f1.width = kW1;
     f1.height = kH1;
+    f1.hotspot = Hotspot{1, 1};
     f1.pixels.assign(static_cast<std::size_t>(kW1) * kH1 * 4u, 0);
     for (std::size_t i = 0; i < kW1 * kH1; ++i) {
         f1.pixels[i * 4u + 0] = kFrame1Pixel.b;
@@ -152,10 +153,11 @@ ReadStatus status_of(const std::vector<uint8_t>& bytes) {
     return read_cursor_info(bytes.data(), bytes.size(), info);
 }
 
-Frame single_frame(uint32_t w, uint32_t h, uint8_t level) {
+Frame single_frame(uint32_t w, uint32_t h, uint8_t level, Hotspot hs = Hotspot{0, 0}) {
     Frame f;
     f.width = w;
     f.height = h;
+    f.hotspot = hs;
     f.pixels.assign(static_cast<std::size_t>(w) * h * 4u, 0);
     for (std::size_t i = 0; i < static_cast<std::size_t>(w) * h; ++i) {
         f.pixels[i * 4u + 0] = level;
@@ -166,11 +168,12 @@ Frame single_frame(uint32_t w, uint32_t h, uint8_t level) {
     return f;
 }
 
+// hs 落到帧上（帧级热点），不再存在 spec 级热点
 CursorSpec spec_of(Frame f, Hotspot hs) {
     CursorSpec s;
     s.slot = SlotId::Arrow;
     s.source_kind = SourceKind::Png;
-    s.hotspot = hs;
+    f.hotspot = hs;
     s.frames.push_back(f);
     return s;
 }
@@ -287,7 +290,6 @@ void register_container_cases(Runner& runner) {
         std::vector<uint8_t> built;
 
         CursorSpec empty;
-        empty.hotspot = Hotspot{0, 0};
         CHECK(write_cursor_bytes(empty, built).status == WriteStatus::InvalidSpec);
 
         std::vector<uint8_t> dummy;

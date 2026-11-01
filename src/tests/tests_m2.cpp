@@ -48,10 +48,10 @@ bool write_fixture_cur(const std::wstring& dir, const std::wstring& fname, uint3
     CursorSpec s;
     s.slot = SlotId::Arrow;
     s.source_kind = SourceKind::CurPassthrough;
-    s.hotspot = Hotspot{static_cast<uint16_t>(dim / 4), static_cast<uint16_t>(dim / 4)};
     Frame f;
     f.width = dim;
     f.height = dim;
+    f.hotspot = Hotspot{static_cast<uint16_t>(dim / 4), static_cast<uint16_t>(dim / 4)};
     f.pixels.assign(static_cast<std::size_t>(dim) * dim * 4u, 255);
     s.frames.push_back(f);
 

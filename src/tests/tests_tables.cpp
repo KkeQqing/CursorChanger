@@ -110,8 +110,7 @@ CursorSpec one_frame_spec(uint32_t w, uint32_t h, uint8_t level, Hotspot hs) {
     CursorSpec s;
     s.slot = SlotId::Arrow;
     s.source_kind = SourceKind::Png;
-    s.hotspot = hs;
-    s.frames.push_back(make_frame(w, h, solid(w, h, level)));
+    s.frames.push_back(make_frame(w, h, solid(w, h, level), hs));  // 热点在帧上（U15）
     return s;
 }
 
@@ -384,13 +383,11 @@ void register_ir_negative_cases(Runner& runner) {
 
     runner.add("ir_rejects_empty_frames", [](Runner& runner) {
         CursorSpec s;
-        s.hotspot = Hotspot{0, 0};
         CHECK(validate_spec(s).status == SpecStatus::EmptyFrames);
     });
 
     runner.add("ir_rejects_bad_pixel_buffer", [](Runner& runner) {
         CursorSpec s;
-        s.hotspot = Hotspot{0, 0};
         s.frames.push_back(make_frame(4, 4, solid(4, 3, 255)));  // 少一行
         const SpecError e = validate_spec(s);
         CHECK(e.status == SpecStatus::PixelBufferSize);
@@ -415,7 +412,6 @@ void register_ir_negative_cases(Runner& runner) {
             px[i + 3] = 128;  // A  -> B > A，违预乘
         }
         CursorSpec s;
-        s.hotspot = Hotspot{0, 0};
         s.frames.push_back(make_frame(4, 4, px));
         CHECK(validate_spec(s).status == SpecStatus::NotPremultiplied);
     });

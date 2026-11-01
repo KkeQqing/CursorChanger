@@ -29,15 +29,19 @@ struct Hotspot {
 struct Frame {
     uint32_t width{0};
     uint32_t height{0};
+    Hotspot hotspot{};            // 帧级：容器每个目录项都有独立热点（U15 实测结论）
     std::vector<uint8_t> pixels;  // 恰为 width*height*4 字节，行内无填充
 };
 
 struct CursorSpec {
     SlotId slot{SlotId::Invalid};
     std::vector<Frame> frames;  // 至少 1 个；按 height*width 升序
-    Hotspot hotspot{};
     SourceKind source_kind{SourceKind::Png};
 };
+
+// 按参考帧热点换算到目标尺寸：round(v * to / from)。
+// 产出多帧的通道（PNG/SVG）用它把「以原图坐标表达的热点」逐帧换算（U15）。
+Hotspot scale_hotspot(Hotspot ref, uint32_t ref_dim, uint32_t to_dim);
 
 enum class SpecStatus : uint8_t {
     Ok,
@@ -60,11 +64,14 @@ struct ValidateOptions {
     bool reject_fully_transparent{true};  // H10；仅调试路径可关（DESIGN §10）
 };
 
-// top-down BGRA32 构帧；尺寸不匹配时把 pixels 原样带着，由 validate 报错（不夹带修正）。
-inline Frame make_frame(uint32_t width, uint32_t height, std::vector<uint8_t> top_down_bgra) {
+// top-down BGRA32 构帧。hotspot 默认 (0,0)（对任何合法尺寸都在界内），
+// 多帧通道应显式给出按 U15 换算后的值。
+inline Frame make_frame(uint32_t width, uint32_t height, std::vector<uint8_t> top_down_bgra,
+                        Hotspot hotspot = Hotspot{0, 0}) {
     Frame f;
     f.width = width;
     f.height = height;
+    f.hotspot = hotspot;
     f.pixels = std::move(top_down_bgra);
     return f;
 }
