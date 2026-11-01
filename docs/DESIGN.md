@@ -180,20 +180,33 @@ stb_image 解码（强制 4 通道）
 ```cpp
 enum class SourceKind { Png, Svg, CurPassthrough };
 
+struct Hotspot {            // core 自带类型，不用 Win32 的 POINT（§2 层规则：core 不依赖 windows.h）
+    uint16_t x, y;
+};
+
 struct Frame {
-    uint32_t width, height;
-    std::vector<uint8_t> pixels;  // BGRA32, **premultiplied**, 行无额外填充（由 writer 负责对齐）
+    uint32_t width, height;                 // 1..256；0 的编码约定只允许出现在 writer 内部
+    std::vector<uint8_t> pixels;            // BGRA32, **premultiplied**
+    // 行序：index 0 = 最上一行（top-down）。底向上翻转是 CUR 容器的事，见 H11。
+    // 行内无填充：每行恰为 width*4 字节，4 字节对齐由 writer 在 AND 掩码侧负责。
 };
 
 struct CursorSpec {
-    SlotId slot;                  // 强类型，禁止用裸 int 传"槽位"（参数语义防错）
-    std::vector<Frame> frames;    // 至少 1 个；按边长升序
-    POINT hotspot;                // v1：整份 spec 一个 hotspot；passthrough 通道保留原文件内帧级值
+    SlotId slot;                            // 强类型，禁止用裸 int 传「槽位」（参数语义防错）
+    std::vector<Frame> frames;              // 至少 1 个；按 (height*width) 升序
+    Hotspot hotspot;                        // v1：整份 spec 一个 hotspot；passthrough 保留原文件帧级值
     SourceKind source_kind;
 };
 ```
 
-字段级约束：`frames` 非空；`width/height ∈ [1,256]`（0 在 ICONDIR 里表示 256，转换必须在 writer 内部处理，不得外泄）；`pixels.size() == w*h*4` 且 `premultiplied == true` 是**不变量**，`CurWriter` 入口断言之。
+字段级不变量（`CurWriter` 入口全部拒绝，不修正、不夹带）：
+
+- `frames` 非空；每帧 `width/height ∈ [1,256]`。
+- `pixels.size() == width*height*4`。
+- **预乘可检**：每个像素的 B/G/R 三通道都必须 `<= A`（预乘的必要条件）。不满足即判「忘了预乘或算错了」并拒收 —— 这是该错误唯一能机器发现的形态（U13）。
+- `hotspot.x < width && hotspot.y < height`（对**每一帧**成立，H5）。
+- 全帧 alpha 全为 0 的输入**拒收**（§9.1 负对照 1）：产出「合法但看不见」的光标是缺陷，不是结果。
+- 帧数上限、目录偏移等容器级约束见 §6。
 
 ### 5.2 槽位表（唯一表述处，别处不得重复）
 
@@ -286,7 +299,8 @@ trim = none            ; 仅 SVG：none | auto
 | H6 | 尺寸 256 在目录项里写作 `0`，在 DIB 头里写作 `256` | 256 帧被判为 0×0 / 加载失败 |
 | H7 | 各帧 `biPlanes==1`、`biBitCount ∈ {1,4,8,32}`（v1 只产 32） | 加载成功但颜色错乱 |
 | H8 | 帧按 `w*h` 升序、目录项偏移严格连续无空洞 | 部分系统挑帧失败，只在特定「指针大小」下坏 —— 最难归因的一类 |
-| H9 | 文件总长 = `6 + 16*n + Σ条目长`，不得有多余尾部字节 | 通常仍加载成功（**危险**：不报错不代表合法）→ 必须有 L1 长度断言 |
+| H10 | **不产出「合法但看不见」的光标**：帧的 alpha 直方图若全为 0，writer 拒收 | 用户换完皮肤后光标消失，只能靠还原按钮救 —— 严重度高于任何显示瑕疵，必须前置拦 |
+| H11 | XOR 位图与 AND 掩码都按**底向上（bottom-up）**存储；`CursorSpec` 是 top-down，writer 负责翻转 | 图形上下颠倒。非对称夹具（「上三行不透明、底一行半透明」）+ 独立实现生成的 golden 才能同时抓住行序与偏移错误；对称夹具抓不到 |
 
 H9 特别说明：容错的加载器会让坏文件「看起来没问题」，所以自检绝不能以「没报错」为通过标准。
 
@@ -427,6 +441,10 @@ CursorSwitch/
 | `probe.reapply_rounds` | `2` | 用「再应用一次皮肤」作对照实验次数 | M2 |
 | `probe.settle_ms` | `200` | 落点后等待，防抖/防过渡动画 | M2 |
 | `probe.debounce_ms` | `300` | 仅 BACKLOG watcher 用 | — |
+| `writer.max_dir_entries` | `12` | 容器上限（D8 七档 + 余量） | M1 |
+| `writer.min_frame_bytes` | `128` | AND 掩码最小行填充（1bpp，4 字节对齐） | M1 |
+| `writer.min_dir_gap_bytes` | `64` | 帧数据偏移最小间隔 | M1 |
+| `writer.reject_fully_transparent` | `true` | H10；设 false 仅供调试，默认必须 true | M1 |
 | `hotspot.group.*` | §5.3 | 默认规则也走配置，不散落 if | M1 |
 
 ---
@@ -488,6 +506,9 @@ CursorSwitch/
 | U9 | M0 之前本项目无任何代码：`build.bat`/`tests.bat`/exe 均未创建、未实测 | 已核销（M0 实测，数字见 `docs/summaries/V0.1-*.md`） | M0 |
 | U10 | 静态 CRT（`/MT`）下最小 exe 实际尺寸区间（M0 阈值 ≥65536 的依据） | 本轮构建实测 | M0 |
 | U11 | 本机 WIC 是否支持 SVG 解码 | **未验证（先前凭既有知识写成「不支持」，已标注）** | 仅当有人提议走该路径时才验，否则不依赖 |
+| U12 | `.cur` 目录项里 hotspot 占据 `wPlanes/wBitCount` 两个 WORD，且 `LoadCursorFromFileW` 读的就是这两个字段 | **未验证（按公开格式文档理解实现；writer 已按此写）** | M2 用 `GetIconInfo` 的 `ptHotSpot` 实测核销 |
+| U13 | 「每通道 `<= alpha`」作为预乘必要条件，是否会把合法输入误拒（如上游输出 alpha=255 之外的边界） | **未验证** | M1 记录误拒率；若误拒则改为告警 + 就地预乘 |
+| U14 | `BI_RGB` 下 `biSizeImage` 写 XOR 字节数是否被各加载路径接受（0 也常见） | **未验证（writer 写实际字节数；reader 明确不依赖该字段）** | M2 L1 |
 
 ---
 
