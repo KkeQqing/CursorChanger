@@ -31,6 +31,8 @@ C:\Windows\System32\curl.exe -sSL --max-time 40 `
 # 期望：594C2FE35D49488B4382DBFAEC8F98366DEFCA819D916AC95BECF3E75F4200B3
 ```
 
+**归一风险（M0 实测）**：`.gitattributes` 用 `* text=auto eol=lf`，若上游文件本身是 CRLF，checkout 后工作区字节会变，sha256 与上表**必然不符**。本次实测该文件 CRLF 计数为 0，工作区 sha == git blob sha == 记录值，故无冲突。**若将来某个 vendor 文件出现不符，先给它加 `-text` 关闭转换，再重记 sha，不要反过来改 sha。**
+
 ## 未入库 / 待定
 
 | 依赖 | 状态 |
