@@ -44,4 +44,33 @@ QueryResult read_sz(Root root, const wchar_t* sub_key, const wchar_t* value_name
 // 键本身是否存在（§7.2 的第三态：整个键不存在）。
 QueryResult key_exists(Root root, const wchar_t* sub_key, bool& exists);
 
+// 读 REG_DWORD。用于 U18：观测 CursorBaseSize 是否随「指针大小」滑条变化。
+// 与 read_sz 一样严格区分「值不存在」与「值为 0」。
+QueryResult read_dword(Root root, const wchar_t* sub_key, const wchar_t* value_name,
+                       uint32_t& out, bool& found);
+
+// ---- 写入侧（M2b）。这些函数会改变注册表，真机上调用必须先取得用户授权；
+// 测试用沙箱键 HKCU\Software\CursorSwitch-selftest 走同一段代码。----
+
+enum class WriteStatus : uint8_t {
+    Ok,
+    KeyNotFound,      // 写操作不自动建键：键不存在就报错，避免把拼错的路径静默创建出来
+    AccessDenied,
+    Unexpected,
+};
+
+WriteStatus write_sz(Root root, const wchar_t* sub_key, const wchar_t* value_name,
+                     const wchar_t* data);
+
+// 删除单个值。值不存在返回 Ok（幂等：还原动作不该因为「本来就没有」而失败）。
+WriteStatus delete_value(Root root, const wchar_t* sub_key, const wchar_t* value_name);
+
+// 建键（含多级）。只用于沙箱与 applied 目录落地，不改已存在的键。
+WriteStatus ensure_key(Root root, const wchar_t* sub_key);
+
+// 删除一个**已空**的键；键里还有值就拒绝。
+// 故意不给「递归删除」的选项：误传给真机键时，宁可什么都不做，
+// 也不能把用户的光标方案整个清掉。测试的收尾清理走这个接口。
+WriteStatus delete_empty_key(Root root, const wchar_t* sub_key);
+
 }  // namespace cs::apply

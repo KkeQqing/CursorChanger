@@ -51,9 +51,10 @@ IF ERRORLEVEL 1 GOTO :L_FAIL_COMPILE
 REM ---- 5. compile tests ----
 CL %FLAGS% /Fo%OUTDIR%\ src\core\cli.cpp src\core\ir.cpp src\core\slots.cpp ^
    src\core\claim.cpp src\core\cur_writer.cpp src\core\cur_reader.cpp ^
-   src\selfcheck\l1.cpp src\apply\registry.cpp ^
+   src\selfcheck\l1.cpp src\selfcheck\verify_live.cpp ^
+   src\apply\registry.cpp src\apply\baseline.cpp src\apply\spi.cpp src\apply\pipeline.cpp ^
    src\tests\tests_main.cpp src\tests\tests_tables.cpp src\tests\tests_cur.cpp ^
-   src\tests\tests_l1_probe.cpp src\tests\tests_registry_probe.cpp ^
+   src\tests\tests_l1_probe.cpp src\tests\tests_registry_probe.cpp src\tests\tests_m2.cpp ^
    /Fe%OUTDIR%\%TESTS% /link user32.lib gdi32.lib advapi32.lib /SUBSYSTEM:CONSOLE > "%OUTDIR%\compile-tests.log" 2>&1
 IF ERRORLEVEL 1 GOTO :L_FAIL_COMPILE
 

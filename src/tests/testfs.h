@@ -9,10 +9,10 @@
 
 namespace cs::test {
 
-inline bool read_whole_file(const wchar_t* path, std::vector<uint8_t>& out) {
+inline bool read_whole_file(const std::wstring& path, std::vector<uint8_t>& out) {
     out.clear();
     std::FILE* f = nullptr;
-    if (::_wfopen_s(&f, path, L"rb") != 0 || f == nullptr) return false;
+    if (::_wfopen_s(&f, path.c_str(), L"rb") != 0 || f == nullptr) return false;
     if (std::fseek(f, 0, SEEK_END) != 0) {
         std::fclose(f);
         return false;
@@ -25,9 +25,9 @@ inline bool read_whole_file(const wchar_t* path, std::vector<uint8_t>& out) {
     return got == out.size() && got > 0;
 }
 
-inline bool write_whole_file(const wchar_t* path, const std::vector<uint8_t>& bytes) {
+inline bool write_whole_file(const std::wstring& path, const std::vector<uint8_t>& bytes) {
     std::FILE* f = nullptr;
-    if (::_wfopen_s(&f, path, L"wb") != 0 || f == nullptr) return false;
+    if (::_wfopen_s(&f, path.c_str(), L"wb") != 0 || f == nullptr) return false;
     const std::size_t put = bytes.empty() ? 0 : std::fwrite(bytes.data(), 1, bytes.size(), f);
     std::fclose(f);
     return put == bytes.size();

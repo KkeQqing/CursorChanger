@@ -136,5 +136,95 @@ QueryResult key_exists(Root root, const wchar_t* sub_key, bool& exists) {
     exists = true;
     return QueryResult{QueryStatus::Ok, 0};
 }
+QueryResult read_dword(Root root, const wchar_t* sub_key, const wchar_t* value_name,
+                       uint32_t& out, bool& found) {
+    out = 0;
+    found = false;
+    if (sub_key == nullptr || value_name == nullptr) {
+        return QueryResult{QueryStatus::Unexpected, static_cast<uint32_t>(ERROR_INVALID_PARAMETER)};
+    }
+    HKEY h = nullptr;
+    LSTATUS s = RegOpenKeyExW(to_hkey(root), sub_key, 0, KEY_READ, &h);
+    if (s != ERROR_SUCCESS) return QueryResult{classify(s), static_cast<uint32_t>(s)};
+
+    DWORD type = 0;
+    DWORD bytes = sizeof(out);
+    s = RegQueryValueExW(h, value_name, nullptr, &type, reinterpret_cast<BYTE*>(&out), &bytes);
+    RegCloseKey(h);
+    if (s == ERROR_FILE_NOT_FOUND) return QueryResult{QueryStatus::Ok, 0};  // found=false
+    if (s != ERROR_SUCCESS) return QueryResult{classify(s), static_cast<uint32_t>(s)};
+    if (type != REG_DWORD || bytes != sizeof(out)) {
+        return QueryResult{QueryStatus::Unexpected, static_cast<uint32_t>(ERROR_INVALID_DATA)};
+    }
+    found = true;
+    return QueryResult{QueryStatus::Ok, 0};
+}
+
+WriteStatus write_sz(Root root, const wchar_t* sub_key, const wchar_t* value_name,
+                     const wchar_t* data) {
+    if (sub_key == nullptr || value_name == nullptr || data == nullptr) {
+        return WriteStatus::Unexpected;
+    }
+    HKEY h = nullptr;
+    // 不自动建键：路径写错时静默创建一个新键，比报错更难发现（§7.1 的失败模式偏好）。
+    const LSTATUS o = RegOpenKeyExW(to_hkey(root), sub_key, 0, KEY_SET_VALUE, &h);
+    if (o == ERROR_FILE_NOT_FOUND) return WriteStatus::KeyNotFound;
+    if (o == ERROR_ACCESS_DENIED) return WriteStatus::AccessDenied;
+    if (o != ERROR_SUCCESS) return WriteStatus::Unexpected;
+
+    const DWORD bytes = static_cast<DWORD>((wcslen(data) + 1) * sizeof(wchar_t));
+    const LSTATUS s = RegSetValueExW(h, value_name, 0, REG_SZ,
+                                     reinterpret_cast<const BYTE*>(data), bytes);
+    RegCloseKey(h);
+    return s == ERROR_SUCCESS ? WriteStatus::Ok : WriteStatus::Unexpected;
+}
+
+WriteStatus delete_value(Root root, const wchar_t* sub_key, const wchar_t* value_name) {
+    if (sub_key == nullptr || value_name == nullptr) return WriteStatus::Unexpected;
+    HKEY h = nullptr;
+    const LSTATUS o = RegOpenKeyExW(to_hkey(root), sub_key, 0, KEY_SET_VALUE, &h);
+    if (o == ERROR_FILE_NOT_FOUND) return WriteStatus::Ok;  // 键都没有 = 没有可删的，幂等
+    if (o != ERROR_SUCCESS) return WriteStatus::Unexpected;
+
+    const LSTATUS s = RegDeleteValueW(h, value_name);
+    RegCloseKey(h);
+    if (s == ERROR_SUCCESS || s == ERROR_FILE_NOT_FOUND) return WriteStatus::Ok;  // 值不存在也算删成
+    return WriteStatus::Unexpected;
+}
+
+WriteStatus ensure_key(Root root, const wchar_t* sub_key) {
+    if (sub_key == nullptr) return WriteStatus::Unexpected;
+    HKEY h = nullptr;
+    const LSTATUS s = RegCreateKeyExW(to_hkey(root), sub_key, 0, nullptr, REG_OPTION_NON_VOLATILE,
+                                      KEY_WRITE, nullptr, &h, nullptr);
+    if (s != ERROR_SUCCESS) return WriteStatus::Unexpected;
+    RegCloseKey(h);
+    return WriteStatus::Ok;
+}
+
+WriteStatus delete_empty_key(Root root, const wchar_t* sub_key) {
+    if (sub_key == nullptr) return WriteStatus::Unexpected;
+    // 先数一下有没有值。有值就拒绝 —— 这个接口存在的唯一理由是安全：
+    // 误把真机键传进来时，它必须什么都不做，而不是把用户的光标方案清空。
+    HKEY h = nullptr;
+    const LSTATUS o = RegOpenKeyExW(to_hkey(root), sub_key, 0, KEY_READ | KEY_WRITE, &h);
+    if (o == ERROR_FILE_NOT_FOUND) return WriteStatus::Ok;  // 本来就没有，视为已删
+    if (o != ERROR_SUCCESS) return WriteStatus::Unexpected;
+
+    DWORD count = 0;
+    const LSTATUS q = RegQueryInfoKeyW(h, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+                                       &count, nullptr, nullptr, nullptr, nullptr);
+    if (q != ERROR_SUCCESS) {
+        RegCloseKey(h);
+        return WriteStatus::Unexpected;
+    }
+    if (count > 0) {  // 有值：拒绝，绝不递归删
+        RegCloseKey(h);
+        return WriteStatus::Unexpected;
+    }
+    RegCloseKey(h);
+    return RegDeleteKeyW(to_hkey(root), sub_key) == ERROR_SUCCESS ? WriteStatus::Ok
+                                                                   : WriteStatus::Unexpected;
+}
 
 }  // namespace cs::apply

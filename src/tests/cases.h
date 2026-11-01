@@ -24,4 +24,7 @@ void register_l1_cases(Runner& runner);
 void probe_registry_names(std::FILE* out);
 void register_registry_cases(Runner& runner);
 
+// tests_m2.cpp：注册表写侧 / 三态基线 / 还原 / 端到端流水线，全部走沙箱键
+void register_apply_cases(Runner& runner);
+
 }  // namespace cs::test
