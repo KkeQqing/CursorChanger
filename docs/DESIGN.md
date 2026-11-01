@@ -253,10 +253,16 @@ ne_resize, sizene, top_right_corner  -> SizeNE
 sw_resize, sizesw, bottom_left_corner-> SizeSW
 ```
 
+别名表覆盖 **16 个 v1 槽位**；遗留 `Size` 有槽位、**无别名**（它不参与 §11 的 V1.0 验收，也不接受任何文件名认领）。这条既是设计决定也被 `claim_matches_independent_expected_table` 机器断言（「覆盖 ⟺ used_in_v1」）。
+测试侧另立一张**手抄自本节**的期望表（`kExpectedAliases`）：M1a 的守卫制造实验证明，只用 `alias_table()` 自身当输入的自检在被破坏时仍全绿，同义反复等于没测。
+
 可扩展性判据（机器可检）：**新增一个槽位或一个别名 = 只在表里加一行，不需要改任何 `if/switch`**。若某次改动为「加一个别名」动了逻辑代码，视为违背契约。
 `-resize` 系列别名是为了吃下 XCursor 风格命名；这是数据驱动的真实理由，不是装饰。
 
 **未认领文件必须报告**，不得静默忽略。认领结果是一张表：`文件 → SlotId | 未认领(原因)`。
+
+**一张图 ≠ 一个槽位（对角槽的实际后果）**：`SizeNW`/`SizeSE` 与 `SizeNE`/`SizeSW` 在 Windows 里是**四个独立注册表值**，同一张对角图靠**不同 hotspot** 区分方向。而 §5.1 的 v1 约定是「一份 spec 一个 hotspot」，因此皮肤包必须为这四个槽各给一个文件（`nw_resize.png` / `se_resize.png` / `ne_resize.png` / `sw_resize.png`），别名表也为此分成四条（§5.2）。
+推论：**素材包文件数少于 16 时必然是部分认领**，这不是 bug，UI 与 CLI 都要把「缺哪几槽」列出来。若将来要支持「一张对角图自动派生 4 槽」，那是 hotspot 提到帧级的需求变更，须先改 §5.1 再动代码。
 
 ### 5.3 hotspot 默认规则与覆盖
 
@@ -399,15 +405,19 @@ L3 是本项目的**唯一真判据**。L1+L2 全绿而 L3 不符 = 「静默失
 `ui/` 不含业务逻辑，只调用 `apply/` 的接口；`main.cpp` 的 `--apply/--restore/--reset/--probe/--build <dir>` 调同一批接口。
 理由不是「顺便支持命令行」，而是**可验证性**：L3 探测、日志输出、回归脚本都必须能无人值守跑。GUI 里每个按钮旁显示等价 CLI 命令。
 
+**构建与测试的先后是判据的一部分**（M1a 实测踩中）：`tests.bat` 无法分辨手里的 exe 是新建的还是上一轮留下的。一次编译失败（`build.bat` exit 4）之后再跑 `tests.bat`，会得到一份**排版正确、内容属于已经不存在的源码树**的红名单。因此：判绿一律走 `verify.bat`（它要求 build 退出码为 0 才运行 tests）；单独贴 `tests.bat` 的输出时必须同时给同一轮的 `BUILD_EXIT`。
+
 ### 9.3 目录布局
 
 ```
 CursorSwitch/
   AGENTS.md  DESIGN.md  README.md
-  build.bat  tests.bat            # 必须 CRLF、纯 ASCII（本机 PS5.1 按 GBK 读 .ps1；
-                                   #  且 cmd 会把 echo 里的裸 `>` 当重定向 —— 见 AGENTS 陷阱表）
+  build.bat  tests.bat  verify.bat  # 三个脚本必须 CRLF、纯 ASCII（本机 PS5.1 按 GBK 读 .ps1；
+                                    #  且 cmd 会把 echo 里的裸 `>` 当重定向 —— 见 AGENTS 陷阱表）
+                                    #  verify.bat = build 退出码为 0 才允许跑 tests，防陈旧二进制冒充结果
   src/
-    core/     ir.h cur_writer.h cur_reader.h png_source.* svg_source.* claim.* hotspot.*
+    core/     ir.* slots.* claim.* cli.* version.h cur_format.h cur_writer.* cur_reader.*
+    sources/  png_source.* svg_source.*        # M3/M4 才建；hotspot 默认规则并入 slots.*（一张表 + 一个求值函数）
     apply/    registry.* baseline.* apply.* selfcheck.* probe.*
     ui/       main_window.* resources.rc
     main.cpp  # CLI 入口 + GUI 入口（无参数时启动 GUI）
@@ -459,7 +469,7 @@ CursorSwitch/
 | M3 | V0.4 | PNG 通道（解码/预乘/缩放/多帧） | 对 `arrow.png` 夹具：L1 通过 + 目测无暗边（以 golden 像素断言替代：边缘半透明像素值在容差内）；无 alpha PNG 走 §4.2 规则且不产生透明洞 |
 | M4 | V0.5 | SVG 通道（**光栅器选型先落定**，见 B-01 + 特性守卫 + 出血/贴边） | 前置条件：D4 选型已被追认。§4.3.2 每条特性各有 1 个**必须被拒**的负对照；出血启发式在夹具上告警/不告警各 1 例；最终光栅器与其**不支持特性清单**写入本文 D4 与 §4.3.2 |
 | M5 | V0.6 | Win32 窗口：皮肤选择 / 逐槽状态 / 应用 / 两种还原 / 结果面板 | GUI 每个动作有等价 CLI 且两者结果一致；窗口截图存档；hotspot 目测校正闭环可用 |
-| — | **V1.0** | MVP 验收 | 13 槽（不含 `Size`）用一套真素材全链路 apply→L3 逐槽通过→还原无残留 |
+| — | **V1.0** | MVP 验收 | **16 个 v1 槽位**（§5.2 表去掉遗留 `Size`）用一套真素材全链路 apply→L3 逐槽通过→还原无残留 |
 
 ### 11.1 「什么时候第一次能真的用」
 
