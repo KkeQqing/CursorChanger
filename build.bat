@@ -27,7 +27,7 @@ SET "OUTDIR=build"
 SET "APP=cursorswitch.exe"
 SET "TESTS=cursorswitch_tests.exe"
 SET "MINBYTES=65536"
-SET "FLAGS=/nologo /std:c++17 /W4 /utf-8 /EHsc /MT /Od /Zi /FC /Isrc"
+SET "FLAGS=/nologo /std:c++17 /W4 /utf-8 /EHsc /MT /Od /Zi /FC /Fd%OUTDIR%\vc140.pdb /Isrc"
 
 IF NOT EXIST "%VCVARS%" GOTO :L_NOVCVARS
 
