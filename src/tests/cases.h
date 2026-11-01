@@ -38,4 +38,7 @@ bool emit_live_skin_narrow(const char* dir, std::uint32_t& files_out);
 // tests_m3.cpp：PNG 通道（解码 / 预乘 / 缩放取整方向 / 拒绝路径）
 void register_png_cases(Runner& runner);
 
+// tests_m4.cpp：SVG 通道（原始输出探针 / 特性守卫 / 贴边 / 端到端）
+void register_svg_cases(Runner& runner);
+
 }  // namespace cs::test

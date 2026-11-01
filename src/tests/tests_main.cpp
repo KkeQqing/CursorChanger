@@ -215,6 +215,7 @@ int main(int argc, char** argv) {
     cs::test::register_registry_cases(runner);
     cs::test::register_apply_cases(runner);
     cs::test::register_png_cases(runner);
+    cs::test::register_svg_cases(runner);
 
     if (force_fail) {
         std::printf("[MODE] force-fail: injecting a case that must fail\n");
