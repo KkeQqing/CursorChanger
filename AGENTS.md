@@ -32,7 +32,8 @@
 - 统一格式：`<type>: <描述>`，type ∈ **feat / fix / chore / docs / refactor / test**。
 - 描述简洁明确说明本次改动内容；中文可以，但**必须 UTF-8 落库**（本机做法：把消息写进 `COMMIT_MSG.tmp` 后用 `git commit -F COMMIT_MSG.tmp`，不要在 PowerShell 里直接 `-m "中文"` —— PS 会按 GBK 传字节，log 变乱码）。
 - **每次改动完成后必须创建一个对应的 commit**，用于追踪与回滚。禁止把多个不相关改动塞进一个 commit。
-- **资源引用完整性**（本项目对应物，取代 Unity 的 `.meta` 规则）：一个功能的源文件、它需要的 `tests/fixtures/` 夹具、`tests/golden/` 基线、`vendor/` 新增依赖，**必须与代码同一个 commit**；`config/settings.ini` 的新 key 与 §10 参数总表的文档行也必须同 commit。任一条 commit 单独 checkout 后 `tests.bat` 都必须能跑 —— 拆开会产出「绿不了」的历史 commit。
+- **资源引用完整性**（本项目对应物，取代 Unity 的 `.meta` 规则）：一个功能的源文件、它需要的 `tests/fixtures/` 夹具、`tests/golden/` 基线、`vendor/` 新增依赖，**必须与代码同一个 commit**；`config/settings.ini` 的新 key 与 §10 参数总表的文档行也必须同 commit。
+- **可 checkout 可运行约束**：**从 M0 的代码 commit 起**，任何 `feat` / `fix` / `test` / `refactor` commit 单独 checkout 后 `build.bat` 与 `tests.bat` 都必须能跑通。纯 `docs` commit 不受此约束（它在代码之前，是 §7 硬顺序要求的）。*此条最初写作「任一 commit」，与 §7 的文档先行相矛盾，M0 实测时暴露，已收窄。*
 - 提交前 `git status` 核对暂存区：不提交 `build/`、`state/`（含用户绝对路径）、`skin/applied/`、生成 exe。
 - 身份仅配**仓库级 local**：`kq <1798178975@qq.com>`，不设 global。
 
@@ -73,14 +74,16 @@
 
 ## 7. 改需求的硬顺序
 
-**先改 `DESIGN.md` §3 决策表 → 再改 §5/§4 契约 → 才允许动代码。** 三步各自成 commit。顺序颠倒（先写代码再补文档）视为流程违规，需回退重做。
+**先改需求（`DESIGN.md` §1 目标与非目标）→ 再改 §3 决策表 → 再改契约（§4/§5/§6/§7）→ 才允许动代码。** 各步各自成 commit。顺序颠倒（先写代码再补文档）视为流程违规，需回退重做。
 
 ## 8. 本机环境速查（已实测的陷阱，别重新踩）
 
 | 事项 | 结论 |
 |---|---|
-| `vcvars64.bat` | **绝不能重定向**（`>nul` 会让环境不生效，后续 `cl` 找不到）。只重定向 `cl`。 |
-| `build.bat` 里的 `echo` | 文案含裸 `>`（如 `OK -> "x.exe"`）会被 cmd 当重定向，**把文本写进 exe**，表现为「编译成功但 exe 只有 13 字节」。`->` 改用 `==>` 之外还需整体核对。 |
+| `vcvars64.bat` 路径 | 本机实测在 `D:\VS IDE\VC\Auxiliary\Build\vcvars64.bat`（安装根非标准、**带空格**，一律加引号）。工具链 `MSVC 14.44.35207`。 |
+| `cl.exe` 目录名 | 是 `bin\Hostx64\x64\`，**不是** `amd64`。用 `*amd64*` 过滤会筛出空集，误判成「没装编译器」。 |
+| `vcvars64.bat` 重定向 | **绝不能重定向**（`>nul` 会让环境不生效，后续 `cl` 找不到）。只重定向 `cl`。 |
+| `echo` 里的重定向符 | **`>`、`<`、`&` 都会破坏批处理**。含 `->` 与 `==>`（后者是我上一轮给的错建议，它照样带 `>`）：`echo OK ==> "x.exe"` 会把文本写进 exe，表现为「编译成功但只有 13 字节」。文案里改用 `TO` / `at` 之类纯字母，并整体核对每条 `echo`。 |
 | 链接竞态 | 上一实例仍在运行 / 链接未写完同样产出 13 字节 exe。构建前先结束占用进程，构建后**断言 exe 字节数**。 |
 | 中文编译器错误 | 会被控制台编码吞掉。设 `VSLANG=1033` 强制英文并保留完整日志。 |
 | 子进程输出捕获 | 必须用 Job Object（`KILL_ON_JOB_CLOSE`）+ `PeekNamedPipe` 带截止轮询。先阻塞 `ReadFile` 再 `WaitForSingleObject` 会让超时形同虚设、整个流程永久挂起。 |
@@ -89,7 +92,9 @@
 | `.bat` 文件 | 用 **CRLF** 写入。 |
 | GUI | 原生 Win32 + comctl32 v6。截图验证用 `PrintWindow`（能抓被遮挡窗口），`CopyFromScreen` 只能抓可见区。 |
 | Python | `python 3.12.12` 可用（写测试脚本/golden 校验）。`pip` 返回码不可信，装完必须 `import` 复核；缺包时改国内镜像 `-i https://pypi.tuna.tsinghua.edu.cn/simple`。 |
-| 缺的工具 | 无 pandoc / LibreOffice / poppler。GitHub 直连偶发不可达 → `vendor/` 入库（D16），别在构建时联网拉取。 |
+| 缺的工具 | 无 pandoc / LibreOffice / poppler；**无 Rust 工具链**（`cargo`/`rustc`/`rustup` 实测 ABSENT → 阻塞 resvg，见 DESIGN B-01）。 |
+| `curl` 别名陷阱 | PowerShell 里 `curl` 是 `Invoke-WebRequest` 的别名（`Get-Command curl` 的 Source 为空即为此），必须写 `C:\Windows\System32\curl.exe`（实测 8.13.0）。 |
+| 网络（本轮实测） | `raw.githubusercontent.com` 被 **Connection reset**；`cdn.jsdelivr.net` **schannel server closed abruptly**；`fastly.jsdelivr.net` **可用**。故 `vendor/` 走 fastly 镜像 + sha256 入库（D19/D20），构建期不联网。 |
 
 ## 9. 沟通
 
