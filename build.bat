@@ -50,7 +50,8 @@ IF ERRORLEVEL 1 GOTO :L_FAIL_COMPILE
 
 REM ---- 5. compile tests ----
 CL %FLAGS% /Fo%OUTDIR%\ src\core\cli.cpp src\core\ir.cpp src\core\slots.cpp ^
-   src\core\claim.cpp src\tests\tests_main.cpp src\tests\tests_tables.cpp ^
+   src\core\claim.cpp src\core\cur_writer.cpp src\core\cur_reader.cpp ^
+   src\tests\tests_main.cpp src\tests\tests_tables.cpp src\tests\tests_cur.cpp ^
    /Fe%OUTDIR%\%TESTS% /link /SUBSYSTEM:CONSOLE > "%OUTDIR%\compile-tests.log" 2>&1
 IF ERRORLEVEL 1 GOTO :L_FAIL_COMPILE
 

@@ -151,6 +151,7 @@ int main(int argc, char** argv) {
     cs::test::register_claim_cases(runner);
     cs::test::register_hotspot_cases(runner);
     cs::test::register_ir_negative_cases(runner);
+    cs::test::register_container_cases(runner);
 
     if (force_fail) {
         std::printf("[MODE] force-fail: injecting a case that must fail\n");

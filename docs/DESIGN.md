@@ -254,7 +254,11 @@ sw_resize, sizesw, bottom_left_corner-> SizeSW
 ```
 
 别名表覆盖 **16 个 v1 槽位**；遗留 `Size` 有槽位、**无别名**（它不参与 §11 的 V1.0 验收，也不接受任何文件名认领）。这条既是设计决定也被 `claim_matches_independent_expected_table` 机器断言（「覆盖 ⟺ used_in_v1」）。
-测试侧另立一张**手抄自本节**的期望表（`kExpectedAliases`）：M1a 的守卫制造实验证明，只用 `alias_table()` 自身当输入的自检在被破坏时仍全绿，同义反复等于没测。
+测试侧另立一张**逐字手抄自本节全部 43 条**的期望表（`kExpectedAliasRows`）。它的必要性由 M1a 的两次守卫制造实验确定：
+① 用 `alias_table()` 自身当输入又当期望的自检（`claim_every_alias_hits_its_own_slot`），注入同形字符后**一字未红** —— 同义反复；
+② 只「每个槽抄一条」仍不够，破坏落在没被抄到的别名上时照样全绿；
+③ 纯 ASCII 拼写破坏（`pointer` → `pointre`）连 ASCII 守卫也看不见。
+所以现在做**双向全表对照**：实现表每一行必须在手抄表里逐字存在（含指向的槽位），行数同为 43。
 
 可扩展性判据（机器可检）：**新增一个槽位或一个别名 = 只在表里加一行，不需要改任何 `if/switch`**。若某次改动为「加一个别名」动了逻辑代码，视为违背契约。
 `-resize` 系列别名是为了吃下 XCursor 风格命名；这是数据驱动的真实理由，不是装饰。
@@ -303,8 +307,9 @@ trim = none            ; 仅 SVG：none | auto
 | H4 | XOR 数据 **BGRA32 且预乘 alpha** | 半透明边缘一圈暗边或亮边（本类工具第一名视觉 bug） |
 | H5 | `hotspot` 必须 `0 <= x < w && 0 <= y < h` | 轻则点击点与视觉点差一格（极难归因），重则文件非法 |
 | H6 | 尺寸 256 在目录项里写作 `0`，在 DIB 头里写作 `256` | 256 帧被判为 0×0 / 加载失败 |
-| H7 | 各帧 `biPlanes==1`、`biBitCount ∈ {1,4,8,32}`（v1 只产 32） | 加载成功但颜色错乱 |
+| H7 | 各帧 `biPlanes==1`。**产出**只允许 32bpp；**接受**（`.cur` passthrough 的校验）允许 `biBitCount ∈ {1,4,8,24,32}`，其中 15/16bpp 明确拒绝 | 加载成功但颜色错乱；15/16bpp 无 alpha 通道，按其掩码解释透明会得到错误结论 |
 | H8 | 帧按 `w*h` 升序、目录项偏移严格连续无空洞 | 部分系统挑帧失败，只在特定「指针大小」下坏 —— 最难归因的一类 |
+| H9 | 目录项 `bytes_in_res` 必须**等于该帧实际写入的字节数**；文件总长 = `6 + 16*n + Σ条目长`，不得有多余尾部字节 | 短了：reader 把下一帧的头当本帧掩码读，偏移整体错位；长了：通常仍加载成功（**危险**，不报错不代表合法）→ 必须有长度断言 |
 | H10 | **不产出「合法但看不见」的光标**：帧的 alpha 直方图若全为 0，writer 拒收 | 用户换完皮肤后光标消失，只能靠还原按钮救 —— 严重度高于任何显示瑕疵，必须前置拦 |
 | H11 | XOR 位图与 AND 掩码都按**底向上（bottom-up）**存储；`CursorSpec` 是 top-down，writer 负责翻转 | 图形上下颠倒。非对称夹具（「上三行不透明、底一行半透明」）+ 独立实现生成的 golden 才能同时抓住行序与偏移错误；对称夹具抓不到 |
 
@@ -453,8 +458,9 @@ CursorSwitch/
 | `probe.debounce_ms` | `300` | 仅 BACKLOG watcher 用 | — |
 | `writer.max_dir_entries` | `12` | 容器上限（D8 七档 + 余量） | M1 |
 | `writer.min_frame_bytes` | `128` | AND 掩码最小行填充（1bpp，4 字节对齐） | M1 |
-| `writer.min_dir_gap_bytes` | `64` | 帧数据偏移最小间隔 | M1 |
+| `writer.min_dir_gap_bytes` | `64` | **帧条目总字节下限**：不足则用零补齐，保证 `bytes_in_res` 与实际写入字节一致（H9）。语义不是「偏移间隔」，也不得当作只影响目录项而不写数据 | M1 |
 | `writer.reject_fully_transparent` | `true` | H10；设 false 仅供调试，默认必须 true | M1 |
+| `reader.max_entries` | `64` | reader 的**宽松**上限（判「count 被写坏」用），与 `writer.max_dir_entries=12` 角色不同：产出侧严格，校验侧宽松 | M1 |
 | `hotspot.group.*` | §5.3 | 默认规则也走配置，不散落 if | M1 |
 
 ---

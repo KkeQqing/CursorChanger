@@ -11,4 +11,7 @@ void register_claim_cases(Runner& runner);
 void register_hotspot_cases(Runner& runner);
 void register_ir_negative_cases(Runner& runner);
 
+// tests_cur.cpp：CUR 容器（writer 对照独立实现的 golden + reader 反向核验）
+void register_container_cases(Runner& runner);
+
 }  // namespace cs::test

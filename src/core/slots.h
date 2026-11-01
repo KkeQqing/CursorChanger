@@ -21,7 +21,7 @@ enum class SlotId : uint8_t {
     Hand,
     AppStarting,
     Unavailable,
-    Size,  // 遗留槽位：登记但不参与 MVP 验收（DESIGN §11 V1.0 判据「13 槽不含 Size」）
+    Size,  // 遗留槽位：登记但不参与 MVP 验收（DESIGN §11 V1.0 判据「16 个 v1 槽位，不含遗留 Size」）
     SizeNW,
     SizeSE,
     SizeNE,
