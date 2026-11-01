@@ -19,6 +19,12 @@ IF NOT EXIST "%TESTS%" (
     EXIT /B 2
 )
 
+REM ---- run 0: L1 loader probe (writes the artifacts the L1 cases assert on) ----
+"%TESTS%" --probe-l1 > "%OUTDIR%\tests-probe.log" 2>&1
+SET "RP=!ERRORLEVEL!"
+ECHO [RUN] probe-l1    exit=!RP!
+IF NOT "!RP!"=="0" GOTO :L_FAIL_PROBE
+
 REM ---- run A: normal ----
 "%TESTS%" > "%OUTDIR%\tests-normal.log" 2>&1
 SET "RA=!ERRORLEVEL!"
@@ -29,6 +35,8 @@ REM ---- run B: force-fail (must be non-zero) ----
 SET "RB=!ERRORLEVEL!"
 ECHO [RUN] force-fail  exit=!RB!
 
+ECHO --- tests-probe.log ---
+TYPE "%OUTDIR%\tests-probe.log"
 ECHO --- tests-normal.log ---
 TYPE "%OUTDIR%\tests-normal.log"
 ECHO --- tests-forcefail.log ---
@@ -39,6 +47,10 @@ IF "!RB!"=="0" GOTO :L_FAIL_RED_PROOF
 
 ECHO [ OK ] harness self-proof passed: green when honest, red when sabotaged
 EXIT /B 0
+
+:L_FAIL_PROBE
+ECHO [FAIL] L1 probe mode failed, see tests-probe.log above
+EXIT /B 5
 
 :L_FAIL_NORMAL_GREEN
 ECHO [FAIL] normal mode must exit 0

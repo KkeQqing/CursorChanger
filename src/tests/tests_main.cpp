@@ -135,6 +135,11 @@ void harness_detects_failure(Runner& runner) {
 
 int main(int argc, char** argv) {
     const bool force_fail = (argc >= 2 && std::strcmp(argv[1], "--force-fail") == 0);
+    if (argc >= 2 && std::strcmp(argv[1], "--probe-l1") == 0) {
+        // 实测模式：打印 Windows 加载器的真实观测值，不跑断言、不改任何系统状态
+        cs::test::probe_l1_load(stdout);
+        return 0;
+    }
 
     Runner runner;
     runner.add("cli_no_args", &cli_no_args);
@@ -152,6 +157,7 @@ int main(int argc, char** argv) {
     cs::test::register_hotspot_cases(runner);
     cs::test::register_ir_negative_cases(runner);
     cs::test::register_container_cases(runner);
+    cs::test::register_l1_cases(runner);
 
     if (force_fail) {
         std::printf("[MODE] force-fail: injecting a case that must fail\n");

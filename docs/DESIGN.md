@@ -377,6 +377,9 @@ Windows 10/11「设置 → 辅助功能 → 鼠标指针 → 大小/颜色」的
 L3 是本项目的**唯一真判据**。L1+L2 全绿而 L3 不符 = 「静默失败」，必须报失败。
 候选实现细节（`GetCursorInfo` 于目标线程调用、句柄比较 vs 像素比较）状态 **待实测**。
 
+**L1 可以且应当早于任何真机 apply 跑**：`LoadCursorFromFileW` + `GetIconInfo` 只在**当前进程**内加载一个光标对象，不写注册表、不广播、不改变用户正在使用的指针。所以 M2a 用它就地核销三个对 Windows 加载器的假设 —— U12（hotspot 位于目录项的两个 WORD）、U14（`biSizeImage` 写实际 XOR 长度）、U16（AND 行过填充被接受）。
+反过来，**L2/L3 必须先取得用户单独授权**：它们会改 `HKCU` 并当场替换用户正在用的指针。
+
 **证据规范（交付时必须给出，缺一视为未验证）**
 
 1. 命令与返回码原文（`build.bat` / `tests.bat` 的 `$LASTEXITCODE`）；
@@ -522,11 +525,11 @@ CursorSwitch/
 | U9 | M0 之前本项目无任何代码：`build.bat`/`tests.bat`/exe 均未创建、未实测 | 已核销（M0 实测，数字见 `docs/summaries/V0.1-*.md`） | M0 |
 | U10 | 静态 CRT（`/MT`）下最小 exe 实际尺寸区间（M0 阈值 ≥65536 的依据） | 本轮构建实测 | M0 |
 | U11 | 本机 WIC 是否支持 SVG 解码 | **未验证（先前凭既有知识写成「不支持」，已标注）** | 仅当有人提议走该路径时才验，否则不依赖 |
-| U12 | `.cur` 目录项里 hotspot 占据 `wPlanes/wBitCount` 两个 WORD，且 `LoadCursorFromFileW` 读的就是这两个字段 | **未验证（按公开格式文档理解实现；writer 已按此写）** | M2 用 `GetIconInfo` 的 `ptHotSpot` 实测核销 |
+| U12 | `.cur` 目录项里 hotspot 占据 `wPlanes/wBitCount` 两个 WORD，且 `LoadCursorFromFileW` 读的就是这两个字段 | **已核销（M2a 实测）**：hotspot 位于目录项的两个 WORD，被真实加载器接受。判据：`LoadImage(exact 16x16)` 回读 hotspot 逐字等于写入值 (4,4)；golden 的 (1,1) 在 4x4 / 8x8 两帧上均回读 (1,1)。取写位置：目录项偏移 4–5 / 6–7（即 ICO 布局里 planes/bitcount 的同一字节位） | M2a 已用 `GetIconInfo` 实测核销 |
 | U13 | 「每通道 `<= alpha`」作为预乘必要条件，是否会把合法输入误拒（如上游输出 alpha=255 之外的边界） | **未验证** | M1 记录误拒率；若误拒则改为告警 + 就地预乘 |
-| U14 | `BI_RGB` 下 `biSizeImage` 写 XOR 字节数是否被各加载路径接受（0 也常见） | **未验证（writer 写实际字节数；reader 明确不依赖该字段）** | M2 L1 |
-| U15 | 多帧时单一 hotspot 的缩放规则 | **未决（M1b 记入）**：§5.1 现为「一份 spec 一个 hotspot」，`validate_spec` 要求它对**每一帧**都成立（宁可拒，不静默改数值）。16/32/48 三档同时生成时，中心类规则的热点在小帧上必然越界 → M3 一定踩到。待定：改成帧级 hotspot，还是由参考尺寸按比例缩放 | M3 开工前决定 |
-| U16 | AND 掩码行按 `max(对齐值, 128)` **过填充**，系统加载器是否照单全收 | **未验证**：三套实现（writer / reader / gen_golden）自洽只能证明彼此一致，证明不了 `LoadCursorFromFileW` 接受这种远大于真实 1bpp 行距的掩码区。若实测不接受，把 `writer.min_frame_bytes` 改成精确对齐值即可（数据层改动，不动结构） | M2 L1 |
+| U14 | `BI_RGB` 下 `biSizeImage` 写 XOR 字节数是否被各加载路径接受（0 也常见） | **已核销（M2a 实测）**：`biSizeImage` 写 XOR 实际长度被加载器接受（golden 与三个单帧样本均 `loaded=1`，reader 侧仍不依赖该字段） | M2a L1 实测 |
+| U15 | 多帧时单一 hotspot 的缩放规则 | **已核销（M2a 实测）**：加载器在**帧之间不做** hotspot 换算（多帧文件 hotspot 写 (1,1)，指名取 16 与取 48 都回读 (1,1)）；只有重采样到系统默认尺寸时才按比例缩放（(4,4)@16 → (8,8)@32）。因此多帧必须**逐帧写缩放后的热点**，当前 writer 把同一绝对值写进每一帧目录项 → 大帧视觉热点错位 | M3 开工前把 `CursorSpec` 改成帧级 hotspot（容器本就支持，属数据层改动） |
+| U16 | AND 掩码行按 `max(对齐值, 128)` **过填充**，系统加载器是否照单全收 | **已核销（M2a 实测）**：AND 行过填充 `max(对齐值,128)` 被加载器接受 —— 两套非系统尺寸的 golden 帧（4x4 / 8x8，掩码行距 128）均可加载并按帧导航 | M2a L1 实测 |
 
 ---
 
