@@ -5,8 +5,13 @@
 namespace cs::core {
 namespace {
 
-// 行内容必须与 DESIGN §5.2 的别名表逐条一致（守卫测 ASCII、测重复、测非空，
-// 但「一致」本身是人工核对项 —— 见 M1 总结的「一致靠约定」小节，不作反射比对）。
+// 行内容与 DESIGN §5.2 的别名表逐条一致（守卫测 ASCII / 重复 / 已归一 / 槽位真实存在，
+// 但「与文档一致」本身靠人工核对，见 M1 总结的「一致靠约定」小节，不作反射比对）。
+//
+// 对角槽各有 6 条别名，是因为实测确认 Windows 只有 SizeNWSE / SizeNESW 两个值
+// （原先以为是四个方向各一个）。后果：素材包里 `nw_resize.png` 与 `se_resize.png`
+// 会**同时认领同一个槽**。认领函数如实返回该槽，重复冲突由 M2b 的扫描器负责报告
+// （规则见 §5.2「重复认领必须报告，不得任选其一」）—— 这里不静默挑选。
 constexpr AliasSpec kAliases[] = {
     {{"arrow"}, SlotId::Arrow},
     {{"normal"}, SlotId::Arrow},
@@ -16,8 +21,9 @@ constexpr AliasSpec kAliases[] = {
     {{"wait"}, SlotId::Wait},
     {{"busy"}, SlotId::Wait},
     {{"loading"}, SlotId::Wait},
-    {{"cross"}, SlotId::Cross},
-    {{"precision"}, SlotId::Cross},
+    {{"cross"}, SlotId::Crosshair},
+    {{"crosshair"}, SlotId::Crosshair},
+    {{"precision"}, SlotId::Crosshair},
     {{"up"}, SlotId::UpArrow},
     {{"alternate"}, SlotId::UpArrow},
     {{"uparrow"}, SlotId::UpArrow},
@@ -29,28 +35,29 @@ constexpr AliasSpec kAliases[] = {
     {{"pointer"}, SlotId::Hand},
     {{"appstarting"}, SlotId::AppStarting},
     {{"working_busy"}, SlotId::AppStarting},
-    {{"no"}, SlotId::Unavailable},
-    {{"not_allowed"}, SlotId::Unavailable},
-    {{"denied"}, SlotId::Unavailable},
-    {{"unavailable"}, SlotId::Unavailable},
+    {{"no"}, SlotId::No},
+    {{"not_allowed"}, SlotId::No},
+    {{"denied"}, SlotId::No},
+    {{"unavailable"}, SlotId::No},
     {{"move"}, SlotId::SizeAll},
     {{"sizeall"}, SlotId::SizeAll},
     {{"ew_resize"}, SlotId::SizeWE},
     {{"sizewe"}, SlotId::SizeWE},
     {{"ns_resize"}, SlotId::SizeNS},
     {{"sizens"}, SlotId::SizeNS},
-    {{"nw_resize"}, SlotId::SizeNW},
-    {{"sizenw"}, SlotId::SizeNW},
-    {{"top_left_corner"}, SlotId::SizeNW},
-    {{"se_resize"}, SlotId::SizeSE},
-    {{"sizese"}, SlotId::SizeSE},
-    {{"bottom_right_corner"}, SlotId::SizeSE},
-    {{"ne_resize"}, SlotId::SizeNE},
-    {{"sizene"}, SlotId::SizeNE},
-    {{"top_right_corner"}, SlotId::SizeNE},
-    {{"sw_resize"}, SlotId::SizeSW},
-    {{"sizesw"}, SlotId::SizeSW},
-    {{"bottom_left_corner"}, SlotId::SizeSW},
+    {{"nw_resize"}, SlotId::SizeNWSE},
+    {{"sizenw"}, SlotId::SizeNWSE},
+    {{"se_resize"}, SlotId::SizeNWSE},
+    {{"sizese"}, SlotId::SizeNWSE},
+    {{"top_left_corner"}, SlotId::SizeNWSE},
+    {{"bottom_right_corner"}, SlotId::SizeNWSE},
+    {{"ne_resize"}, SlotId::SizeNESW},
+    {{"sizene"}, SlotId::SizeNESW},
+    {{"sw_resize"}, SlotId::SizeNESW},
+    {{"sizesw"}, SlotId::SizeNESW},
+    {{"top_right_corner"}, SlotId::SizeNESW},
+    {{"bottom_left_corner"}, SlotId::SizeNESW},
+    {{"nwpen"}, SlotId::NWPen},
 };
 
 }  // namespace

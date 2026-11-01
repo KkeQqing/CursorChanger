@@ -212,25 +212,36 @@ struct CursorSpec {
 
 注册表位置 `HKCU\Control Panel\Cursors`，值类型 `REG_SZ`，内容为 `.cur` 的**绝对路径**。
 
-| SlotId | 注册表值名 | 语义 | Win32 常量 |
-|---|---|---|---|
-| Arrow | `Arrow` | 正常选择 | `OCR_NORMAL` |
-| IBeam | `IBeam` | 文本选择 | `OCR_IBEAM` |
-| Wait | `Wait` | 忙 | `OCR_WAIT` |
-| Cross | `Cross` | 精确选择 | `OCR_CROSS` |
-| UpArrow | `UpArrow` | 替代选择 | `OCR_UP` |
-| Help | `Help` | 帮助选择 | `OCR_HELP` |
-| Hand | `Hand` | 链接选择 | `OCR_HAND` |
-| AppStarting | `AppStarting` | 后台忙碌 | `OCR_APPSTARTING` |
-| Unavailable | `Unavailable` | 不可用 | `OCR_NO` |
-| Size | `Size` | （遗留，通常不使用） | — |
-| SizeNW / SizeSE | `SizeNW` / `SizeSE` | 左上↔右下对角 | `OCR_SIZENWSE` |
-| SizeNE / SizeSW | `SizeNE` / `SizeSW` | 右上↔左下对角 | `OCR_SIZENESW` |
-| SizeWE | `SizeWE` | 水平调整 | `OCR_SIZEWE` |
-| SizeNS | `SizeNS` | 垂直调整 | `OCR_SIZENS` |
-| SizeAll | `SizeAll` | 移动 | `OCR_SIZEALL` |
+| SlotId | 注册表值名 | 语义 | Win32 常量 | 来源 |
+|---|---|---|---|---|
+| Arrow | `Arrow` | 正常选择 | `OCR_NORMAL` | 本机实测 |
+| IBeam | `IBeam` | 文本选择 | `OCR_IBEAM` | 本机实测 |
+| Wait | `Wait` | 忙 | `OCR_WAIT` | 本机实测 |
+| UpArrow | `UpArrow` | 替代选择 | `OCR_UP` | 本机实测 |
+| Help | `Help` | 帮助选择 | `OCR_HELP` | 本机实测 |
+| Hand | `Hand` | 链接选择 | `OCR_HAND` | 本机实测 |
+| AppStarting | `AppStarting` | 后台忙碌 | `OCR_APPSTARTING` | 本机实测 |
+| Crosshair | `Crosshair` | 精确选择 | `OCR_CROSS` | **本机实测**（我原先凭文档记忆写成 `Cross`，**错**） |
+| No | `No` | 不可用 | `OCR_NO` | **本机实测**（原先写成 `Unavailable`，**错**） |
+| SizeNWSE | `SizeNWSE` | 左上↔右下对角 | `OCR_SIZENWSE` | **本机实测**（原先拆成 `SizeNW`/`SizeSE` 两个槽，**错**：实际是一个槽） |
+| SizeNESW | `SizeNESW` | 右上↔左下对角 | `OCR_SIZENESW` | **本机实测**（原先拆成 `SizeNE`/`SizeSW`，**错**） |
+| SizeWE | `SizeWE` | 水平调整 | `OCR_SIZEWE` | 本机实测 |
+| SizeNS | `SizeNS` | 垂直调整 | `OCR_SIZENS` | 本机实测 |
+| SizeAll | `SizeAll` | 移动 | `OCR_SIZEALL` | 本机实测 |
+| NWPen | `NWPen` | 手写笔 | —（`OCR_*` 无对应） | **本机实测新增**：原计划完全没这个槽 |
 
-> 状态 **待实测**：本表按记忆列出，M2 第一步必须用程序实测枚举确认「写入的名字确实被系统接受」。写错值名是**静默无效**的（不报错、不生效），因此 M4 的判据不是「没报错」，而是 §8 的 L2/L3。
+**合计 15 个槽位**，全部参与 v1。原先列出的遗留 `Size` 在本机注册表里**不存在**，已删除。
+
+同一次探查还看到这些**不是槽位**的值，列出来以免后续误当成槽：`CursorBaseSize`、`Scheme Source`、
+`GestureVisualization`、`ContactVisualization`（均 REG_DWORD），以及该键的默认值（REG_SZ，方案显示名）。
+`CursorBaseSize` 疑似 §7.4「指针大小」的存储位置，**未验证**（见 U4/U18）。
+
+> 状态 **部分核销（M2b 本机实测枚举）**：值名取自这台 Win11 22631 的 `HKCU\Control Panel\Cursors` 实际内容，
+> 因此原表的 4 处错名已纠正（见上表「来源」列），并新增了计划外的 `NWPen`。
+> **仍未核销的部分**：注册表里存在某个名字，只证明「OS 自己写过它」，不证明「我们写任何名字都会被接受」——
+> 写一个不被认的值同样存得下，只是不生效（这正是 U1 担心的静默无效）。
+> 合法集合的完整边界、以及 `Cross`/`Unavailable` 这类 legacy 名是否仍然可用，必须由 §8 的 **L3** 逐槽实测；
+> 所以判据从来不是「没报错」，而是「生效帧的像素对上了」。
 
 **别名表（数据，非代码分支）** —— 认领阶段把 stem 归一到 SlotId：
 
@@ -238,20 +249,21 @@ struct CursorSpec {
 arrow, normal            -> Arrow
 ibeam, text, beam        -> IBeam
 wait, busy, loading      -> Wait
-cross, precision         -> Cross
+cross, crosshair, precision -> Crosshair
 up, alternate, uparrow   -> UpArrow
 help, question, question_arrow -> Help
 hand, link, pointer      -> Hand
 appstarting, working_busy-> AppStarting
-no, not_allowed, denied, unavailable -> Unavailable
+no, not_allowed, denied, unavailable -> No
 move, sizeall            -> SizeAll
 ew_resize, sizewe        -> SizeWE
 ns_resize, sizens        -> SizeNS
-nw_resize, sizenw, top_left_corner -> SizeNW
-se_resize, sizese, bottom_right_corner -> SizeSE
-ne_resize, sizene, top_right_corner  -> SizeNE
-sw_resize, sizesw, bottom_left_corner-> SizeSW
+nw_resize, sizenw, se_resize, sizese, top_left_corner, bottom_right_corner -> SizeNWSE
+ne_resize, sizene, sw_resize, sizesw, top_right_corner, bottom_left_corner -> SizeNESW
+nwpen                    -> NWPen
 ```
+（合计 **45** 条别名，覆盖 15 个槽位。`nwpen` 是按值名直取的别名，其余每条都出自本表；
+两个对角槽各收 6 条别名 —— 这是**实测的槽结构**决定的，不是命名偏好。）
 
 别名表覆盖 **16 个 v1 槽位**；遗留 `Size` 有槽位、**无别名**（它不参与 §11 的 V1.0 验收，也不接受任何文件名认领）。这条既是设计决定也被 `claim_matches_independent_expected_table` 机器断言（「覆盖 ⟺ used_in_v1」）。
 测试侧另立一张**逐字手抄自本节全部 43 条**的期望表（`kExpectedAliasRows`）。它的必要性由 M1a 的两次守卫制造实验确定：
@@ -265,8 +277,20 @@ sw_resize, sizesw, bottom_left_corner-> SizeSW
 
 **未认领文件必须报告**，不得静默忽略。认领结果是一张表：`文件 → SlotId | 未认领(原因)`。
 
-**一张图 ≠ 一个槽位（对角槽的实际后果）**：`SizeNW`/`SizeSE` 与 `SizeNE`/`SizeSW` 在 Windows 里是**四个独立注册表值**，同一张对角图靠**不同 hotspot** 区分方向。而 §5.1 的 v1 约定是「一份 spec 一个 hotspot」，因此皮肤包必须为这四个槽各给一个文件（`nw_resize.png` / `se_resize.png` / `ne_resize.png` / `sw_resize.png`），别名表也为此分成四条（§5.2）。
-推论：**素材包文件数少于 16 时必然是部分认领**，这不是 bug，UI 与 CLI 都要把「缺哪几槽」列出来。若将来要支持「一张对角图自动派生 4 槽」，那是 hotspot 提到帧级的需求变更，须先改 §5.1 再动代码。
+**对角槽的真实结构（M2b 实测纠正）**：Windows 里对角只有**两个**注册表值 —— `SizeNWSE` 与 `SizeNESW`，
+不是一个方向一个值。所以同一张对角图（例如 `nw_resize.png` 与 `se_resize.png` 其实是同一形状）**都映射到同一个槽**。
+由此产生两条必须处理的规则：
+
+1. **重复认领必须报告，不得任选其一**：素材包里同时存在 `nw_resize.png` 和 `se_resize.png` 时，
+   `SizeNWSE` 被两个文件认领。这不是错误，但选哪个必须是**显式结果**（报告「该槽由 X 提供，Y 被忽略」），
+   绝不能静默取第一个 —— 静默会让用户永远查不出为什么皮肤不是他以为的那张。扫描器落地时必须实现（M2b 后续步）。
+2. **方向靠谁翻？**：一个值要同时服务左上与右下两个方向，方向信息只能来自**镜像**：
+   OS 是否自动镜像 `SizeNWSE` 到东南角，**未验证**（新增 U19）。
+   若 OS 不镜像，则单槽单图必然有一个方向是错的 —— 那是对角图素材的固有约束，不是我们的 bug，
+   但必须在 UI 上说清楚，别让用户以为皮肤坏了。
+
+推论：**素材包覆盖不满 15 个槽是正常的部分认领**，不是 bug；UI 与 CLI 都要把「缺哪几槽」列出来。
+另：§5.1 的「一份 spec 一个 hotspot」已由 U15 的实测结论改向为**帧级 hotspot**（M3 落地）。
 
 ### 5.3 hotspot 默认规则与覆盖
 
@@ -276,10 +300,10 @@ sw_resize, sizesw, bottom_left_corner-> SizeSW
 | IBeam | `(w/2, h*1/5)` |
 | UpArrow | `(w/2, 0)` |
 | Hand | `(w*3/10, h*1/5)`（食指尖） |
-| Cross, SizeAll, SizeWE, SizeNS | `(w/2, h/2)` |
-| SizeNW | `(0, 0)`；SizeSE `(w-1, h-1)` |
-| SizeNE | `(w-1, 0)`；SizeSW `(0, h-1)` |
-| Unavailable | `(w/2, h/2)` |
+| Crosshair, SizeAll, SizeWE, SizeNS, No | `(w/2, h/2)` |
+| SizeNWSE | `(0, 0)`（图按西北角朝向画；东南端是否由 OS 镜像 = U19，未验证） |
+| SizeNESW | `(w-1, 0)`（同上，NE 端为基准） |
+| NWPen | `(w/2, h/2)`（**未目测**：笔形图形的热点语义无人确认，M5 必须实测） |
 
 以上为**目测校正的初值**，不是权威数值；M5 必须提供「目测校正 + 写 sidecar」的闭环，且在总结里标注哪些槽位尚未目测确认。
 
@@ -478,7 +502,7 @@ CursorSwitch/
 | M3 | V0.4 | PNG 通道（解码/预乘/缩放/多帧） | 对 `arrow.png` 夹具：L1 通过 + 目测无暗边（以 golden 像素断言替代：边缘半透明像素值在容差内）；无 alpha PNG 走 §4.2 规则且不产生透明洞 |
 | M4 | V0.5 | SVG 通道（**光栅器选型先落定**，见 B-01 + 特性守卫 + 出血/贴边） | 前置条件：D4 选型已被追认。§4.3.2 每条特性各有 1 个**必须被拒**的负对照；出血启发式在夹具上告警/不告警各 1 例；最终光栅器与其**不支持特性清单**写入本文 D4 与 §4.3.2 |
 | M5 | V0.6 | Win32 窗口：皮肤选择 / 逐槽状态 / 应用 / 两种还原 / 结果面板 | GUI 每个动作有等价 CLI 且两者结果一致；窗口截图存档；hotspot 目测校正闭环可用 |
-| — | **V1.0** | MVP 验收 | **16 个 v1 槽位**（§5.2 表去掉遗留 `Size`）用一套真素材全链路 apply→L3 逐槽通过→还原无残留 |
+| — | **V1.0** | MVP 验收 | **15 个 v1 槽位**（§5.2 表，M2b 实测后的真实集合；原先写作 16/13 都是凭错误槽表得出的，已随实测纠正）用一套真素材全链路 apply→L3 逐槽通过→还原无残留 |
 
 ### 11.1 「什么时候第一次能真的用」
 
@@ -514,7 +538,7 @@ CursorSwitch/
 
 | ID | 断言 | 状态 | 由哪一步核销 |
 |---|---|---|---|
-| U1 | `HKCU\Control Panel\Cursors` 的值名集合 == §5.2 表 | **未验证（凭记忆）** | M2 实测枚举 |
+| U1 | `HKCU\Control Panel\Cursors` 的值名集合 == §5.2 表 | **部分核销（M2b 实测枚举）**：已按本机真值纠正 4 处错名并补 `NWPen`；「写任意名字是否被接受」仍需 L3 逐槽定。legacy 名（`Cross`/`Unavailable`）是否仍可用未验 | M2b 的 L3 |
 | U2 | `SPI_SETCURSORS` 的 uiParam/pvParam/flags 确切传法 | **未验证** | M2 查证 + 实测 |
 | U3 | L3 能否稳定取到生效帧并做像素比对 | **未验证** | M2 原型 |
 | U4 | 设置的指针大小/颜色是否抢占、存储位置 | **未验证** | 不做假设，走 §7.4 探测 |
@@ -530,6 +554,9 @@ CursorSwitch/
 | U14 | `BI_RGB` 下 `biSizeImage` 写 XOR 字节数是否被各加载路径接受（0 也常见） | **已核销（M2a 实测）**：`biSizeImage` 写 XOR 实际长度被加载器接受（golden 与三个单帧样本均 `loaded=1`，reader 侧仍不依赖该字段） | M2a L1 实测 |
 | U15 | 多帧时单一 hotspot 的缩放规则 | **已核销（M2a 实测）**：加载器在**帧之间不做** hotspot 换算（多帧文件 hotspot 写 (1,1)，指名取 16 与取 48 都回读 (1,1)）；只有重采样到系统默认尺寸时才按比例缩放（(4,4)@16 → (8,8)@32）。因此多帧必须**逐帧写缩放后的热点**，当前 writer 把同一绝对值写进每一帧目录项 → 大帧视觉热点错位 | M3 开工前把 `CursorSpec` 改成帧级 hotspot（容器本就支持，属数据层改动） |
 | U16 | AND 掩码行按 `max(对齐值, 128)` **过填充**，系统加载器是否照单全收 | **已核销（M2a 实测）**：AND 行过填充 `max(对齐值,128)` 被加载器接受 —— 两套非系统尺寸的 golden 帧（4x4 / 8x8，掩码行距 128）均可加载并按帧导航 | M2a L1 实测 |
+| U17 | `NWPen`（手写笔）的正确热点语义，以及它是否受「指针大小」体系管辖 | **未验证**：该槽是 M2b 实测才发现的，原计划完全没有；默认热点目前猜的是中心 | M5 目测校正 |
+| U18 | `CursorBaseSize` 是否就是「设置→辅助功能→鼠标指针→大小」滑条的存储位置 | **未验证（强线索）**：M2b 在同一个键下观测到它（REG_DWORD）。若成立，§7.4 的抢占探测可以直接读这个值，比现在的行为探测更早更准 | M2b 下一步：改滑条前后各读一次比对 |
+| U19 | OS 是否把 `SizeNWSE`/`SizeNESW` 自动镜像到对角另一端 | **未验证**：一个注册表值要服务两个方向，不镜像就必然有一端是错的。决定对角图要不要我们自己产出两张 | M2b 的 L3（逐槽取帧目测） |
 
 ---
 

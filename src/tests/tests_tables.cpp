@@ -22,11 +22,11 @@ using cs::test::Runner;
 
 namespace {
 
-// 期望数量取自 DESIGN：§5.2 槽表 17 行、V1.0 判据 16 个 v1 槽位、别名表 43 条。
+// 期望数量取自 DESIGN §5.2（M2b 实测后的真实集合）：15 个槽位、全部参与 v1、45 条别名。
 // 数字变了必须同时改 DESIGN，否则这里变红。
-constexpr std::size_t kExpectedSlots = 17;
-constexpr std::size_t kExpectedV1Slots = 16;
-constexpr std::size_t kExpectedAliases = 43;
+constexpr std::size_t kExpectedSlots = 15;
+constexpr std::size_t kExpectedV1Slots = 15;
+constexpr std::size_t kExpectedAliases = 45;
 
 bool ascii_only(std::string_view s) {
     if (s.empty()) return false;
@@ -54,8 +54,9 @@ constexpr ExpectedAlias kExpectedAliasRows[] = {
     {"wait", SlotId::Wait},
     {"busy", SlotId::Wait},
     {"loading", SlotId::Wait},
-    {"cross", SlotId::Cross},
-    {"precision", SlotId::Cross},
+    {"cross", SlotId::Crosshair},
+    {"crosshair", SlotId::Crosshair},
+    {"precision", SlotId::Crosshair},
     {"up", SlotId::UpArrow},
     {"alternate", SlotId::UpArrow},
     {"uparrow", SlotId::UpArrow},
@@ -67,28 +68,29 @@ constexpr ExpectedAlias kExpectedAliasRows[] = {
     {"pointer", SlotId::Hand},
     {"appstarting", SlotId::AppStarting},
     {"working_busy", SlotId::AppStarting},
-    {"no", SlotId::Unavailable},
-    {"not_allowed", SlotId::Unavailable},
-    {"denied", SlotId::Unavailable},
-    {"unavailable", SlotId::Unavailable},
+    {"no", SlotId::No},
+    {"not_allowed", SlotId::No},
+    {"denied", SlotId::No},
+    {"unavailable", SlotId::No},
     {"move", SlotId::SizeAll},
     {"sizeall", SlotId::SizeAll},
     {"ew_resize", SlotId::SizeWE},
     {"sizewe", SlotId::SizeWE},
     {"ns_resize", SlotId::SizeNS},
     {"sizens", SlotId::SizeNS},
-    {"nw_resize", SlotId::SizeNW},
-    {"sizenw", SlotId::SizeNW},
-    {"top_left_corner", SlotId::SizeNW},
-    {"se_resize", SlotId::SizeSE},
-    {"sizese", SlotId::SizeSE},
-    {"bottom_right_corner", SlotId::SizeSE},
-    {"ne_resize", SlotId::SizeNE},
-    {"sizene", SlotId::SizeNE},
-    {"top_right_corner", SlotId::SizeNE},
-    {"sw_resize", SlotId::SizeSW},
-    {"sizesw", SlotId::SizeSW},
-    {"bottom_left_corner", SlotId::SizeSW},
+    {"nw_resize", SlotId::SizeNWSE},
+    {"sizenw", SlotId::SizeNWSE},
+    {"top_left_corner", SlotId::SizeNWSE},
+    {"se_resize", SlotId::SizeNWSE},
+    {"sizese", SlotId::SizeNWSE},
+    {"bottom_right_corner", SlotId::SizeNWSE},
+    {"ne_resize", SlotId::SizeNESW},
+    {"sizene", SlotId::SizeNESW},
+    {"top_right_corner", SlotId::SizeNESW},
+    {"sw_resize", SlotId::SizeNESW},
+    {"sizesw", SlotId::SizeNESW},
+    {"bottom_left_corner", SlotId::SizeNESW},
+    {"nwpen", SlotId::NWPen},
 };
 constexpr std::size_t kExpectedAliasCount = sizeof(kExpectedAliasRows) / sizeof(kExpectedAliasRows[0]);
 
@@ -191,6 +193,24 @@ void register_table_cases(Runner& runner) {
         CHECK(ok == n);  // 反查必须整表可逆，否则注册表回读会认错槽位
     });
 
+    runner.add("slot_table_rows_all_observed_on_this_machine", [](Runner& runner) {
+        std::size_t n = 0;
+        const SlotSpec* t = slot_table(n);
+        std::size_t observed = 0;
+        for (std::size_t i = 0; i < n; ++i) {
+            if (t[i].observed_on_this_machine) ++observed;
+        }
+        // 当前每一个值名都来自本机注册表实测。若将来加了「仅凭文档」的槽位，
+        // 这条会红 —— 那时必须在 DESIGN §5.2 的来源列写清它还没被证实。
+        CHECK(observed == n);
+        CHECK(n == kExpectedSlots);
+    });
+
+    runner.add("slot_table_v1_count_helper_agrees", [](Runner& runner) {
+        // 报告/判据用的计数走这个函数，避免各处再各写一份字面量
+        CHECK(slot_table_v1_count() == kExpectedV1Slots);
+    });
+
     runner.add("alias_table_wellformed", [](Runner& runner) {
         std::size_t n = 0;
         const AliasSpec* a = alias_table(n);
@@ -249,9 +269,28 @@ void register_claim_cases(Runner& runner) {
         }
         CHECK(covered == kExpectedV1Slots);
 
-        // 反向对照：Size 有槽位、无别名 —— 它不该被任何文件名认领上
-        CHECK(find_slot(SlotId::Size) != nullptr);
-        CHECK(claim_by_stem("size", scratch, sizeof(scratch)).status == ClaimStatus::NotInTable);
+        // 反向对照：M2b 实测证明这七个名字在本机注册表里**不存在**（我们原先误当槽位）。
+        // 把它们写进表会让皮肤静默不生效，所以这里钉死：名字必须仍然查不到。
+        CHECK(slot_from_registry_name("Size") == SlotId::Invalid);
+        CHECK(slot_from_registry_name("Cross") == SlotId::Invalid);
+        CHECK(slot_from_registry_name("Unavailable") == SlotId::Invalid);
+        CHECK(slot_from_registry_name("SizeNW") == SlotId::Invalid);
+        CHECK(slot_from_registry_name("SizeSE") == SlotId::Invalid);
+        CHECK(slot_from_registry_name("SizeNE") == SlotId::Invalid);
+        CHECK(slot_from_registry_name("SizeSW") == SlotId::Invalid);
+        // 而实测到的真名字必须都能反查到
+        CHECK(slot_from_registry_name("Crosshair") == SlotId::Crosshair);
+        CHECK(slot_from_registry_name("No") == SlotId::No);
+        CHECK(slot_from_registry_name("SizeNWSE") == SlotId::SizeNWSE);
+        CHECK(slot_from_registry_name("SizeNESW") == SlotId::SizeNESW);
+        CHECK(slot_from_registry_name("NWPen") == SlotId::NWPen);
+
+        // 对角槽的重复认领是实测结构的结果：三种西北系 stem 全部命中同一个槽。
+        // 「冲突由扫描器报告、不静默挑选」属 M2b 后续步，本文件只钉住归一结果。
+        CHECK(claim_by_stem("nw_resize", scratch, sizeof(scratch)).slot == SlotId::SizeNWSE);
+        CHECK(claim_by_stem("se_resize", scratch, sizeof(scratch)).slot == SlotId::SizeNWSE);
+        CHECK(claim_by_stem("top_left_corner", scratch, sizeof(scratch)).slot == SlotId::SizeNWSE);
+        CHECK(claim_by_stem("bottom_right_corner", scratch, sizeof(scratch)).slot == SlotId::SizeNWSE);
     });
 
     // 这条只验证「表内每行的映射自洽」，对**别名字符串本身被改坏无效**（见上方注释），
@@ -272,9 +311,14 @@ void register_claim_cases(Runner& runner) {
     runner.add("claim_accepts_real_file_shapes", [](Runner& runner) {
         char scratch[128];
         CHECK(claim_by_stem("Arrow.png", scratch, sizeof(scratch)).slot == SlotId::Arrow);
-        CHECK(claim_by_stem("sub/dir/nw-resize.svg", scratch, sizeof(scratch)).slot == SlotId::SizeNW);
-        CHECK(claim_by_stem("top left corner.cur", scratch, sizeof(scratch)).slot == SlotId::SizeNW);
-        CHECK(claim_by_stem("se_resize.CUR", scratch, sizeof(scratch)).slot == SlotId::SizeSE);
+        CHECK(claim_by_stem("sub/dir/nw-resize.svg", scratch, sizeof(scratch)).slot == SlotId::SizeNWSE);
+        CHECK(claim_by_stem("top left corner.cur", scratch, sizeof(scratch)).slot == SlotId::SizeNWSE);
+        CHECK(claim_by_stem("se_resize.CUR", scratch, sizeof(scratch)).slot == SlotId::SizeNWSE);
+        CHECK(claim_by_stem("ne_resize.cur", scratch, sizeof(scratch)).slot == SlotId::SizeNESW);
+        CHECK(claim_by_stem("sw-resize.png", scratch, sizeof(scratch)).slot == SlotId::SizeNESW);
+        CHECK(claim_by_stem("crosshair.cur", scratch, sizeof(scratch)).slot == SlotId::Crosshair);
+        CHECK(claim_by_stem("not_allowed.png", scratch, sizeof(scratch)).slot == SlotId::No);
+        CHECK(claim_by_stem("NWPen.cur", scratch, sizeof(scratch)).slot == SlotId::NWPen);
         // 边界外行为不写测试：含空格的 stem（"  IBeam  "）归一后成 "__ibeam__"，
         // 属未定义清洗规则，留给 M2 的扫描层决定，此处不假装已知。
         CHECK(claim_by_stem("hand.cur", scratch, sizeof(scratch)).slot == SlotId::Hand);

@@ -5,26 +5,23 @@ namespace cs::core {
 namespace {
 
 // 行序 == SlotId 声明序，且不含 Invalid。由 tests_tables.cpp 的守卫强制。
-// registry_name 参与注册表写入与匹配，必须纯 ASCII（R10 同形字符风险，已被测试守卫）。
-// display_name 只给 UI 看，允许中文，不参与任何匹配。
+// registry_name 全部来自本机注册表实测（observed=true），除非常量另有标注。
 constexpr SlotSpec kSlots[] = {
-    {SlotId::Arrow, {"Arrow"}, {"正常选择"}, HotspotRule::TipTopLeft, true},
-    {SlotId::IBeam, {"IBeam"}, {"文本选择"}, HotspotRule::IBeamTop, true},
-    {SlotId::Wait, {"Wait"}, {"忙"}, HotspotRule::TipTopLeft, true},
-    {SlotId::Cross, {"Cross"}, {"精确选择"}, HotspotRule::Center, true},
-    {SlotId::UpArrow, {"UpArrow"}, {"替代选择"}, HotspotRule::TipTopCenter, true},
-    {SlotId::Help, {"Help"}, {"帮助选择"}, HotspotRule::TipTopLeft, true},
-    {SlotId::Hand, {"Hand"}, {"链接选择"}, HotspotRule::HandTip, true},
-    {SlotId::AppStarting, {"AppStarting"}, {"后台运行"}, HotspotRule::TipTopLeft, true},
-    {SlotId::Unavailable, {"Unavailable"}, {"不可用"}, HotspotRule::Center, true},
-    {SlotId::Size, {"Size"}, {"调整（遗留）"}, HotspotRule::Center, false},
-    {SlotId::SizeNW, {"SizeNW"}, {"左上调整"}, HotspotRule::CornerNorthWest, true},
-    {SlotId::SizeSE, {"SizeSE"}, {"右下调整"}, HotspotRule::CornerSouthEast, true},
-    {SlotId::SizeNE, {"SizeNE"}, {"右上调整"}, HotspotRule::CornerNorthEast, true},
-    {SlotId::SizeSW, {"SizeSW"}, {"左下调整"}, HotspotRule::CornerSouthWest, true},
-    {SlotId::SizeWE, {"SizeWE"}, {"水平调整"}, HotspotRule::Center, true},
-    {SlotId::SizeNS, {"SizeNS"}, {"垂直调整"}, HotspotRule::Center, true},
-    {SlotId::SizeAll, {"SizeAll"}, {"移动"}, HotspotRule::Center, true},
+    {SlotId::Arrow, {"Arrow"}, {"正常选择"}, HotspotRule::TipTopLeft, true, true},
+    {SlotId::IBeam, {"IBeam"}, {"文本选择"}, HotspotRule::IBeamTop, true, true},
+    {SlotId::Wait, {"Wait"}, {"忙"}, HotspotRule::TipTopLeft, true, true},
+    {SlotId::UpArrow, {"UpArrow"}, {"替代选择"}, HotspotRule::TipTopCenter, true, true},
+    {SlotId::Help, {"Help"}, {"帮助选择"}, HotspotRule::TipTopLeft, true, true},
+    {SlotId::Hand, {"Hand"}, {"链接选择"}, HotspotRule::HandTip, true, true},
+    {SlotId::AppStarting, {"AppStarting"}, {"后台运行"}, HotspotRule::TipTopLeft, true, true},
+    {SlotId::Crosshair, {"Crosshair"}, {"精确选择"}, HotspotRule::Center, true, true},
+    {SlotId::No, {"No"}, {"不可用"}, HotspotRule::Center, true, true},
+    {SlotId::SizeNWSE, {"SizeNWSE"}, {"左上右下对角调整"}, HotspotRule::CornerNorthWest, true, true},
+    {SlotId::SizeNESW, {"SizeNESW"}, {"右上左下对角调整"}, HotspotRule::CornerNorthEast, true, true},
+    {SlotId::SizeWE, {"SizeWE"}, {"水平调整"}, HotspotRule::Center, true, true},
+    {SlotId::SizeNS, {"SizeNS"}, {"垂直调整"}, HotspotRule::Center, true, true},
+    {SlotId::SizeAll, {"SizeAll"}, {"移动"}, HotspotRule::Center, true, true},
+    {SlotId::NWPen, {"NWPen"}, {"手写笔"}, HotspotRule::Center, true, true},
 };
 
 }  // namespace
@@ -32,6 +29,16 @@ constexpr SlotSpec kSlots[] = {
 const SlotSpec* slot_table(std::size_t& count) {
     count = sizeof(kSlots) / sizeof(kSlots[0]);
     return kSlots;
+}
+
+std::size_t slot_table_v1_count() {
+    std::size_t n = 0;
+    const SlotSpec* t = slot_table(n);
+    std::size_t used = 0;
+    for (std::size_t i = 0; i < n; ++i) {
+        if (t[i].used_in_v1) ++used;
+    }
+    return used;
 }
 
 const SlotSpec* find_slot(SlotId id) {
@@ -71,12 +78,8 @@ Hotspot default_hotspot(HotspotRule rule, uint32_t width, uint32_t height) {
         return Hotspot{static_cast<uint16_t>(cx), static_cast<uint16_t>(cy)};
     case HotspotRule::CornerNorthWest:
         return Hotspot{0, 0};
-    case HotspotRule::CornerSouthEast:
-        return Hotspot{static_cast<uint16_t>(width - 1), static_cast<uint16_t>(height - 1)};
     case HotspotRule::CornerNorthEast:
         return Hotspot{static_cast<uint16_t>(width - 1), 0};
-    case HotspotRule::CornerSouthWest:
-        return Hotspot{0, static_cast<uint16_t>(height - 1)};
     case HotspotRule::Invalid:
         return Hotspot{0, 0};
     }
