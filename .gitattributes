@@ -1,0 +1,33 @@
+# 目的：让「任一条 commit 单独 checkout 后 build+tests 都能跑」成立。
+# 本机 core.autocrlf=true（全局/系统级），若不显式覆盖，换行转换会破坏字节级判据。
+
+# 文本：入库归一 LF，工作区也用 LF（golden 比对与跨机可复现的前提）
+* text=auto eol=lf
+
+# 构建脚本必须 CRLF：cmd.exe 对 LF-only 批处理的 label/goto 处理不可靠
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制：禁止任何换行转换。tests/golden/*.cur.bin 一旦被 CRLF 污染，
+# M1 的「字节完全相等」判据会不可复现地变红。
+*.cur binary
+*.ico binary
+*.ani binary
+*.bin binary
+*.png binary
+*.bmp binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.tif binary
+*.webp binary
+*.ttf binary
+*.res binary
+*.exe binary
+*.dll binary
+*.lib binary
+*.obj binary
+
+# 代码 diff 可读性
+*.h diff=cpp
+*.cpp diff=cpp
