@@ -525,6 +525,8 @@ CursorSwitch/
 | U12 | `.cur` 目录项里 hotspot 占据 `wPlanes/wBitCount` 两个 WORD，且 `LoadCursorFromFileW` 读的就是这两个字段 | **未验证（按公开格式文档理解实现；writer 已按此写）** | M2 用 `GetIconInfo` 的 `ptHotSpot` 实测核销 |
 | U13 | 「每通道 `<= alpha`」作为预乘必要条件，是否会把合法输入误拒（如上游输出 alpha=255 之外的边界） | **未验证** | M1 记录误拒率；若误拒则改为告警 + 就地预乘 |
 | U14 | `BI_RGB` 下 `biSizeImage` 写 XOR 字节数是否被各加载路径接受（0 也常见） | **未验证（writer 写实际字节数；reader 明确不依赖该字段）** | M2 L1 |
+| U15 | 多帧时单一 hotspot 的缩放规则 | **未决（M1b 记入）**：§5.1 现为「一份 spec 一个 hotspot」，`validate_spec` 要求它对**每一帧**都成立（宁可拒，不静默改数值）。16/32/48 三档同时生成时，中心类规则的热点在小帧上必然越界 → M3 一定踩到。待定：改成帧级 hotspot，还是由参考尺寸按比例缩放 | M3 开工前决定 |
+| U16 | AND 掩码行按 `max(对齐值, 128)` **过填充**，系统加载器是否照单全收 | **未验证**：三套实现（writer / reader / gen_golden）自洽只能证明彼此一致，证明不了 `LoadCursorFromFileW` 接受这种远大于真实 1bpp 行距的掩码区。若实测不接受，把 `writer.min_frame_bytes` 改成精确对齐值即可（数据层改动，不动结构） | M2 L1 |
 
 ---
 
