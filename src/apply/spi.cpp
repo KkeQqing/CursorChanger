@@ -21,9 +21,4 @@ SpiResult set_cursors_from_registry(uint32_t flags) {
     return r;
 }
 
-uint32_t system_cursor_size() {
-    const int cx = GetSystemMetrics(SM_CXCURSOR);
-    return cx > 0 ? static_cast<uint32_t>(cx) : 0u;
-}
-
 }  // namespace cs::apply

@@ -35,4 +35,7 @@ bool emit_live_skin(const std::wstring& dir, std::uint32_t& files_out);
 // 命令行入口用：把本机 ANSI 码页的参数转成宽字符路径（ASCII 路径无损；非 ASCII 属已知限制）
 bool emit_live_skin_narrow(const char* dir, std::uint32_t& files_out);
 
+// tests_m3.cpp：PNG 通道（解码 / 预乘 / 缩放取整方向 / 拒绝路径）
+void register_png_cases(Runner& runner);
+
 }  // namespace cs::test

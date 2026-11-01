@@ -1,0 +1,89 @@
+{
+  "note": "由 tools/gen_png_fixtures.py 生成；premul_rgba 用 (v*a+127)//255",
+  "fixtures": [
+    {
+      "file": "semi_grey_4x4.png",
+      "w": 4,
+      "h": 4,
+      "color_type": 6,
+      "src_rgba": [
+        200,
+        150,
+        100,
+        128
+      ],
+      "premul_rgba": [
+        100,
+        75,
+        50,
+        128
+      ],
+      "why": "通道 > alpha：不预乘就会被 IR 的 <=alpha 判据抓到"
+    },
+    {
+      "file": "opaque_white_8x8.png",
+      "w": 8,
+      "h": 8,
+      "color_type": 6,
+      "src_rgba": [
+        255,
+        255,
+        255,
+        255
+      ],
+      "premul_rgba": [
+        255,
+        255,
+        255,
+        255
+      ],
+      "why": "记录用途边界：这张图预乘前后相同，不能用来证明预乘"
+    },
+    {
+      "file": "checker_4x4.png",
+      "w": 4,
+      "h": 4,
+      "color_type": 6,
+      "src_rgba": null,
+      "premul_rgba": null,
+      "why": "棋盘 + 逐像素不同：上下颠倒一定测得出"
+    },
+    {
+      "file": "rgb_no_alpha_4x4.png",
+      "w": 4,
+      "h": 4,
+      "color_type": 2,
+      "src_rgba": [
+        255,
+        140,
+        0
+      ],
+      "premul_rgba": [
+        255,
+        140,
+        0,
+        255
+      ],
+      "why": "无 alpha 通道 -> 视为完全不透明"
+    },
+    {
+      "file": "fully_transparent_4x4.png",
+      "w": 4,
+      "h": 4,
+      "color_type": 6,
+      "src_rgba": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "premul_rgba": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "why": "负对照输入：解码可以成功，但进 IR 必须被拒"
+    }
+  ]
+}

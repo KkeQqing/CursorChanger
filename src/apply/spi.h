@@ -18,7 +18,4 @@ struct SpiResult {
 // flags=0 与 flags=SPIF_SENDCHANGE 的差别由调用方（探针）决定，不在这里做假设。
 SpiResult set_cursors_from_registry(uint32_t flags);
 
-// 读取系统当前的默认光标边长等事实，供报告用。
-uint32_t system_cursor_size();
-
 }  // namespace cs::apply
