@@ -36,31 +36,59 @@ bool ascii_only(std::string_view s) {
     return true;
 }
 
-// 独立期望表：**手抄自 DESIGN §5.2**，不从 alias_table() 派生。
-// 存在理由：M1a 的守卫制造实验证明，用同一张表当输入又当期望的自检（原
-// claim_every_alias_hits_its_own_slot）在被破坏时仍然全绿 —— 同义反复，等于没测。
-// 每条 v1 槽位给一个别名；遗留 Size 故意没有别名（下方用例把这条也断言了）。
+// 独立期望表：**43 条逐字手抄自 DESIGN §5.2**，不从 alias_table() 派生。
+// 存在理由：M1a 的两次守卫制造实验证明
+//   a) 用同一张表当输入又当期望的自检，在被破坏时完全不动；
+//   b) 只「每槽抄一条」也不够 —— 破坏落在没被抄到的那条别名上时照样全绿。
+// 所以这里全表对照：表内容被改坏（ASCII 拼写、同形字符、增删行）都必须在这里变红。
 struct ExpectedAlias {
     const char* alias;
     SlotId slot;
 };
 constexpr ExpectedAlias kExpectedAliasRows[] = {
     {"arrow", SlotId::Arrow},
+    {"normal", SlotId::Arrow},
     {"ibeam", SlotId::IBeam},
+    {"text", SlotId::IBeam},
+    {"beam", SlotId::IBeam},
     {"wait", SlotId::Wait},
+    {"busy", SlotId::Wait},
+    {"loading", SlotId::Wait},
     {"cross", SlotId::Cross},
+    {"precision", SlotId::Cross},
     {"up", SlotId::UpArrow},
+    {"alternate", SlotId::UpArrow},
+    {"uparrow", SlotId::UpArrow},
     {"help", SlotId::Help},
+    {"question", SlotId::Help},
+    {"question_arrow", SlotId::Help},
     {"hand", SlotId::Hand},
+    {"link", SlotId::Hand},
+    {"pointer", SlotId::Hand},
     {"appstarting", SlotId::AppStarting},
+    {"working_busy", SlotId::AppStarting},
     {"no", SlotId::Unavailable},
+    {"not_allowed", SlotId::Unavailable},
+    {"denied", SlotId::Unavailable},
+    {"unavailable", SlotId::Unavailable},
     {"move", SlotId::SizeAll},
+    {"sizeall", SlotId::SizeAll},
     {"ew_resize", SlotId::SizeWE},
+    {"sizewe", SlotId::SizeWE},
     {"ns_resize", SlotId::SizeNS},
+    {"sizens", SlotId::SizeNS},
     {"nw_resize", SlotId::SizeNW},
+    {"sizenw", SlotId::SizeNW},
+    {"top_left_corner", SlotId::SizeNW},
     {"se_resize", SlotId::SizeSE},
+    {"sizese", SlotId::SizeSE},
+    {"bottom_right_corner", SlotId::SizeSE},
     {"ne_resize", SlotId::SizeNE},
+    {"sizene", SlotId::SizeNE},
+    {"top_right_corner", SlotId::SizeNE},
     {"sw_resize", SlotId::SizeSW},
+    {"sizesw", SlotId::SizeSW},
+    {"bottom_left_corner", SlotId::SizeSW},
 };
 constexpr std::size_t kExpectedAliasCount = sizeof(kExpectedAliasRows) / sizeof(kExpectedAliasRows[0]);
 
@@ -192,7 +220,20 @@ void register_claim_cases(Runner& runner) {
             if (r.status == ClaimStatus::Claimed && r.slot == e.slot) ++hits;
         }
         CHECK(hits == kExpectedAliasCount);
-        CHECK(kExpectedAliasCount == kExpectedV1Slots);  // 每条 v1 槽位各有一个别名
+        CHECK(kExpectedAliasCount == kExpectedAliases);  // 手抄表与实现表同为 43 条（DESIGN §5.2）
+
+        // 双向包含：实现表不得多出/少掉手抄表里的行，且**逐字**相同（含指向的槽位）。
+        // 这一条才真正把「别名串被改坏」变成可发现的错误，无论改坏成 ASCII 还是同形字符。
+        std::size_t na = 0;
+        const AliasSpec* at = alias_table(na);
+        CHECK(na == kExpectedAliasCount);
+        for (std::size_t i = 0; i < na; ++i) {
+            bool documented = false;
+            for (const ExpectedAlias& e : kExpectedAliasRows) {
+                if (std::string_view(e.alias) == at[i].alias && e.slot == at[i].slot) documented = true;
+            }
+            CHECK(documented);
+        }
 
         // 覆盖面：期望表命中的槽位集合必须恰好等于「v1 使用的槽位」集合
         std::size_t ns = 0;
