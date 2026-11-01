@@ -5,6 +5,7 @@
 //  * 进程退出码 = 失败断言数；
 //  * `--force-fail` 追加一条必败用例（tests.bat 断言此时 exit != 0）。
 // 没有这两条，任何「一片绿」都不算证据（AGENTS §4）。
+#include "cases.h"
 #include "core/cli.h"
 #include "test/harness.h"
 
@@ -22,8 +23,13 @@ using cs::test::Runner;
 namespace {
 
 // Windows 空设备：吞掉嵌套 probe 的输出，只保留断言计数。
-// 用 _wfopen 而不是 fopen —— 后者在 MSVC /W4 下触发 C4996，会把日志弄脏。
-std::FILE* sink_open() { return ::_wfopen(L"nul", L"w"); }
+// 上一轮把 fopen 换成 _wfopen 只是把 C4996 换了个函数名（警告照旧），
+// 真正无声的是 secure 家族 _wfopen_s。
+std::FILE* sink_open() {
+    std::FILE* f = nullptr;
+    if (::_wfopen_s(&f, L"nul", L"w") != 0) return nullptr;
+    return f;
+}
 
 std::FILE* probe_out(std::FILE*& sink) {
     sink = sink_open();
@@ -139,6 +145,12 @@ int main(int argc, char** argv) {
     runner.add("table_wellformed", &table_wellformed);
     runner.add("harness_counts_passes", &harness_counts_passes);
     runner.add("harness_detects_failure", &harness_detects_failure);
+
+    // M1a：数据表守卫 / 认领 / hotspot 规则 / IR 不变量（实现在 tests_tables.cpp）
+    cs::test::register_table_cases(runner);
+    cs::test::register_claim_cases(runner);
+    cs::test::register_hotspot_cases(runner);
+    cs::test::register_ir_negative_cases(runner);
 
     if (force_fail) {
         std::printf("[MODE] force-fail: injecting a case that must fail\n");
