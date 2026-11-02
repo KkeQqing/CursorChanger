@@ -96,7 +96,7 @@
 | D15 | 目录布局 | 单 exe + `skin/` + `config/settings.ini` + `state/baseline.ini` | — | 已定 |
 | D16 | vendor | `vendor/` 入库 | 本机 GitHub 直连偶发不可达，必须离线可构建 | 已定 |
 | D17 | 测试形态 | 自写极简断言 harness（返回码 = 失败数），`tests/golden/` 存基线字节 | 不引 gtest 以免再加一层构建依赖 | 已定 |
-| D18 | CRT 链接 | **`/MT` 静态 CRT**，M0–M4 用 `CONSOLE` 子系统 | 单 exe 免装 VC 运行时；也让 §11-M0 的尺寸阈值有意义（`/MD` 下 15KB 是正常值，阈值判据会假红）。子系统问题（GUI 与 CLI 共用单 exe 时 Windows subsystem + `AttachConsole`）推迟到 M5 决定 | 已定 |
+| D18 | CRT 链接 | **`/MT` 静态 CRT**，M0–M4 用 `CONSOLE` 子系统 | 单 exe 免装 VC 运行时；也让 §11-M0 的尺寸阈值有意义（`/MD` 下 15KB 是正常值，阈值判据会假红）。**M5 已定（追认）**：GUI 与 CLI 共用单 exe 时**保持 CONSOLE 子系统**，无参数启动窗口时 `GetConsoleWindow()`+`ShowWindow(SW_HIDE)` 隐藏控制台（仅在交互分支隐藏，截图自检不动调用方控制台）；理由：CLI 的 L3/probe 无人值守输出捕获（Job Object 管道）依赖 stdout，改 WINDOWS 子系统会牵动这条链。代价：纯 GUI 启动有一次控制台闪框（可接受）。| 已定 |
 | D19 | vendor 溯源 | 每个 vendor 文件在 `vendor/README.md` 记录 **来源 URL + sha256 + 许可 + 拉取命令**；文件头版本行作一致性对照 | 本机 GitHub raw 直连已被实测 reset（见 D20），无法依赖构建期联网校验，只能入库时固定并留可核对指纹 | 已定 |
 | D20 | vendor 拉取通道 | 允许改用 CDN 镜像（实测 `fastly.jsdelivr.net` 可用，`cdn.jsdelivr.net` 被中断、`raw.githubusercontent.com` 被 reset）；**入库前必须校验内容签名**（如 stb 头部 `stb_image - v2.30`）+ 记录 sha256 | 镜像内容不保证逐字节等于上游：校验不通过就不入库，禁止「下下来了就用」 | 已定 |
 
@@ -550,6 +550,8 @@ CursorSwitch/
 | M4 | V0.5 | SVG 通道（**光栅器选型先落定**，见 B-01 + 特性守卫 + 出血/贴边） | 前置条件：D4 选型已被追认。§4.3.2 每条特性各有 1 个**必须被拒**的负对照；出血启发式在夹具上告警/不告警各 1 例；最终光栅器与其**不支持特性清单**写入本文 D4 与 §4.3.2 |
 | M5 | V0.6 | Win32 窗口：皮肤选择 / 逐槽状态 / 应用 / 两种还原 / 结果面板 | GUI 每个动作有等价 CLI 且两者结果一致；窗口截图存档；hotspot 目测校正闭环可用 |
 | — | **V1.0** | MVP 验收 | **15 个 v1 槽位**（§5.2 表，M2b 实测后的真实集合；原先写作 16/13 都是凭错误槽表得出的，已随实测纠正）用一套真素材全链路 apply→L3 逐槽通过→还原无残留 |
+
+> **M5 期间的实现纠偏（如实记录）**：`build_only` 在 M2–M4 一直只做 `.cur` 透传 —— M3/M4 交付的是 PNG/SVG **通道模块 + 单元级测试**，但端到端 apply 从没调用它们，于是 §1 目标 2/3（PNG/SVG 可应用）实际断线，且因为 APP 构建列表当时不链接 `png_source/svg_source/cur_writer/pixel` 也照样「绿」而没被发现。commit `69a7efc` 把三条通道按扩展名接入 `build_only`，并用 `tests_m6` 的正/负/回归/坏源不写注册表钉死。**教训**：模块测试全绿 ≠ 通道在业务链上可达；端到端判据必须显式覆盖每条通道。
 
 ### 11.1 「什么时候第一次能真的用」
 
