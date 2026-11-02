@@ -25,7 +25,8 @@ void print_usage() {
         const std::string arg = table[i].arity == cs::core::Arity::NeedDir ? " <dir>" : "";
         std::printf("  --%-12s%s %s\n", name.c_str(), arg.c_str(), summary.c_str());
     }
-    std::printf("\nMilestones: .cur passthrough + apply/restore live now; PNG in M3, SVG in M4, window in M5.\n");
+    std::printf("\nAll three channels are wired end-to-end: .cur passthrough, PNG->cur, SVG->cur.\n");
+    std::printf("Run with no arguments for the window. Skin dir files are claimed by filename stem.\n");
     std::printf("Note: --live-check restores even if a middle step fails (RAII guard).\n");
 }
 

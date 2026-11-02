@@ -16,7 +16,7 @@
 namespace cs::apply {
 
 struct PipelineOptions {
-    std::wstring skin_dir;      // 素材目录（含 .cur）
+    std::wstring skin_dir;      // 素材目录（含 .cur / .png / .svg 三种源，按扩展名路由通道）
     std::wstring applied_dir;   // 产物目录；不存在则创建
     Root root{Root::CurrentUser};
     std::wstring sub_key;       // 真机 L"Control Panel\\Cursors"；测试用沙箱键
@@ -85,8 +85,8 @@ PipelineResult apply_skin(const PipelineOptions& opt);
 RestoreResult restore_from_file(const PipelineOptions& opt, SpiResult& spi_out, bool& loaded);
 RestoreResult reset_default(const PipelineOptions& opt, SpiResult& spi_out);
 
-// 供报告用：目录是否存在、有多少 .cur。不改变任何东西。
-uint32_t count_cur_files(const std::wstring& dir, std::vector<std::wstring>& names_out);
+// 供报告用：目录是否存在、有多少 .cur/.png/.svg 源。不改变任何东西。
+uint32_t count_source_files(const std::wstring& dir, std::vector<std::wstring>& names_out);
 
 // ---- 真机 options 的唯一构造点（M5b：GUI 与 CLI 共用，杜绝两条链各写一套路径常量而漂移）----
 

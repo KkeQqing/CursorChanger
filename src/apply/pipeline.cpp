@@ -2,7 +2,10 @@
 
 #include "apply/spi.h"
 #include "core/claim.h"
+#include "core/cur_writer.h"
+#include "core/png_source.h"
 #include "core/slots.h"
+#include "core/svg_source.h"
 #include "selfcheck/l1.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -10,6 +13,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -79,29 +83,104 @@ struct Claimed {
     std::wstring source;
 };
 
+enum class ExtKind : uint8_t { Cur,
+                               Png,
+                               Svg,
+                               Other };
+
+ExtKind ext_kind(const std::wstring& name) {
+    const std::wstring::size_type dot = name.find_last_of(L'.');
+    if (dot == std::wstring::npos) return ExtKind::Other;
+    std::string e;
+    for (std::wstring::size_type i = dot + 1; i < name.size(); ++i) {
+        const wchar_t c = name[i];
+        if (c >= 0x80) return ExtKind::Other;   // 非 ASCII 扩展名不当任何通道
+        e.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
+    if (e == "cur") return ExtKind::Cur;
+    if (e == "png") return ExtKind::Png;
+    if (e == "svg") return ExtKind::Svg;
+    return ExtKind::Other;
+}
+
+// 把一个已认领的源文件变成 .cur 字节：.cur 透传；png/svg 走通道解码 -> CursorSpec -> CurWriter
+// 单点封装。任何一步失败都必须返回带**观测事实**的错误串，绝不产出「看起来对」的半坏文件（§4）。
+bool build_source_bytes(const std::wstring& source, core::SlotId slot, std::vector<uint8_t>& bytes,
+                        std::string& error) {
+    std::vector<uint8_t> raw;
+    if (!read_file(source, raw)) {
+        error = "cannot read source file";
+        return false;
+    }
+    const ExtKind kind = ext_kind(source);
+    if (kind == ExtKind::Cur) {
+        bytes = std::move(raw);   // passthrough：不重编码（§1 目标 1，D7 不产 PNG 条目）
+        return true;
+    }
+
+    core::CursorSpec spec;
+    std::string detail;
+    if (kind == ExtKind::Png) {
+        core::PngOptions po;   // 默认 sizes{16,32,48} + allow_upscale=false（§10 参数总表）
+        const core::PngStatus st =
+            core::load_png_to_spec(raw.data(), raw.size(), slot, po, spec, detail);
+        if (st != core::PngStatus::Ok) {
+            error = "png decode refused (status=" + std::to_string(static_cast<int>(st)) + ")";
+            if (!detail.empty()) error += ": " + detail;
+            return false;
+        }
+    } else if (kind == ExtKind::Svg) {
+        core::SvgOptions so;   // 默认 work_resolution=1024 + sizes{16,32,48}（§10）
+        core::SvgReport rep;
+        const core::SvgStatus st =
+            core::load_svg_to_spec(raw.data(), raw.size(), slot, so, spec, rep, detail);
+        if (st != core::SvgStatus::Ok) {
+            error = "svg raster refused (status=" + std::to_string(static_cast<int>(st)) + ")";
+            if (!rep.guard.violations.empty()) error += ": disallowed feature";
+            if (!detail.empty()) error += ": " + detail;
+            return false;
+        }
+    } else {
+        error = "unsupported source extension";
+        return false;
+    }
+
+    const core::WriteError we = core::write_cursor_bytes(spec, bytes);
+    if (we.status != core::WriteStatus::Ok) {   // reject_fully_transparent 默认开（H10）
+        error = "cur writer rejected spec (status=" + std::to_string(static_cast<int>(we.status)) +
+                ")";
+        bytes.clear();   // 绝不交半坏文件（H9）
+        return false;
+    }
+    return true;
+}
+
 }  // namespace
 
-uint32_t count_cur_files(const std::wstring& dir, std::vector<std::wstring>& names_out) {
+uint32_t count_source_files(const std::wstring& dir, std::vector<std::wstring>& names_out) {
     names_out.clear();
-    const std::wstring pattern = dir + L"\\*.cur";
-    WIN32_FIND_DATAW fd{};
-    HANDLE h = FindFirstFileW(pattern.c_str(), &fd);
-    if (h == INVALID_HANDLE_VALUE) return 0;
-    do {
-        if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) names_out.push_back(fd.cFileName);
-    } while (FindNextFileW(h, &fd));
-    FindClose(h);
-    std::sort(names_out.begin(), names_out.end());  // 确定性顺序：冲突择一必须是可复现的
+    // 三条通道一并扫描（§1 目标）。Windows 的通配匹配大小写不敏感，ext_kind 再统一小写。
+    for (const wchar_t* pat : {L"\\*.cur", L"\\*.png", L"\\*.svg"}) {
+        const std::wstring pattern = dir + pat;
+        WIN32_FIND_DATAW fd{};
+        HANDLE h = FindFirstFileW(pattern.c_str(), &fd);
+        if (h == INVALID_HANDLE_VALUE) continue;
+        do {
+            if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) names_out.push_back(fd.cFileName);
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
+    std::sort(names_out.begin(), names_out.end());  // 确定性顺序：冲突择一必须可复现
     return static_cast<uint32_t>(names_out.size());
 }
 
 PipelineResult build_only(const PipelineOptions& opt) {
     PipelineResult r;
     std::vector<std::wstring> names;
-    r.scanned = count_cur_files(opt.skin_dir, names);
+    r.scanned = count_source_files(opt.skin_dir, names);
     if (r.scanned == 0) {
         r.aborted_before_registry = true;
-        r.abort_reason = "no .cur files in skin dir";
+        r.abort_reason = "no .cur/.png/.svg files in skin dir";
         return r;
     }
 
@@ -138,7 +217,8 @@ PipelineResult build_only(const PipelineOptions& opt) {
 
     // 2) 同槽多文件的冲突：择第一个（顺序已排序，可复现），但必须报告。
     std::sort(claimed.begin(), claimed.end(), [](const Claimed& a, const Claimed& b) {
-        return a.registry_name < b.registry_name;
+        if (a.registry_name != b.registry_name) return a.registry_name < b.registry_name;
+        return a.source < b.source;   // 同槽不同扩展名（arrow.cur 与 arrow.png）也要确定性择一
     });
     for (std::size_t i = 0; i < claimed.size();) {
         std::size_t j = i;
@@ -161,13 +241,14 @@ PipelineResult build_only(const PipelineOptions& opt) {
         ProducedFile p;
         p.registry_name = c.registry_name;
         p.path = applied_abs + L"\\" + c.registry_name + L".cur";
-        std::string err;
-        if (!read_file(c.source, bytes)) {
+        std::string cerr;
+        if (!build_source_bytes(c.source, c.slot, bytes, cerr)) {
             p.l1_ok = false;
-            p.l1_detail = "cannot read source file";
+            p.l1_detail = cerr;
             r.produced.push_back(p);
             continue;
         }
+        std::string err;
         if (!publish_file(bytes, p.path, err)) {
             p.l1_ok = false;
             p.l1_detail = "publish: " + err;

@@ -118,6 +118,17 @@ def main():
         "why": "负对照输入：解码可以成功，但进 IR 必须被拒",
     })
 
+    # 6) 32x32 半透明：供**通道端到端集成**用例。默认 sizes{16,32,48}+allow_upscale=false
+    #    下，32 原生能产出 16 与 32 两帧（48 超过原生被跳过），从而验证 build_only 的 PNG 路由
+    #    不是「安静地什么都不产」。仍带通道>alpha（200>128），所以它同时也是一次预乘走查。
+    big = (200, 150, 100, 128)
+    write_png(os.path.join(OUT_DIR, "semi_grey_32x32.png"), 32, 32, solid(32, 32, big))
+    fixtures.append({
+        "file": "semi_grey_32x32.png", "w": 32, "h": 32, "color_type": 6,
+        "src_rgba": big, "premul_rgba": premultiply(*big),
+        "why": "端到端集成用：原生 >=32，默认尺寸表能产出可用帧",
+    })
+
     manifest = {"note": "由 tools/gen_png_fixtures.py 生成；premul_rgba 用 (v*a+127)//255",
                 "fixtures": fixtures}
     with open(os.path.join(OUT_DIR, "fixtures.json"), "w", encoding="utf-8") as f:
