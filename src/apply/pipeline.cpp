@@ -284,4 +284,26 @@ RestoreResult reset_default(const PipelineOptions& opt, SpiResult& spi_out) {
     return r;
 }
 
+std::wstring exe_dir() {
+    wchar_t buf[4096];
+    const DWORD n = GetModuleFileNameW(nullptr, buf, 4096);
+    std::wstring p = (n == 0 || n >= 4096) ? std::wstring(L".") : std::wstring(buf, n);
+    const std::wstring::size_type s = p.find_last_of(L"\\/");
+    if (s == std::wstring::npos) return std::wstring(L".");
+    return p.substr(0, s);
+}
+
+PipelineOptions make_live_opts(const std::wstring& skin_dir, bool do_spi) {
+    const std::wstring base = exe_dir();
+    PipelineOptions o;
+    o.skin_dir = skin_dir;
+    o.applied_dir = base + L"\\applied";
+    o.root = Root::CurrentUser;
+    o.sub_key = L"Control Panel\\Cursors";
+    o.baseline_path = base + L"\\state\\baseline.ini";
+    o.do_spi = do_spi;
+    o.spi_flags = 0;   // U2 实测：flags=0 已生效，SPIF_SENDCHANGE 无可观测差别
+    return o;
+}
+
 }  // namespace cs::apply

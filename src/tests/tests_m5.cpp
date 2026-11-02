@@ -176,6 +176,22 @@ void apply_without_dir_is_missing_operand(Runner& runner) {
     CHECK(cs::core::verb_arity(Verb::Apply) == Arity::NeedDir);
 }
 
+// GUI 与 CLI 共用同一 options 构造点，其路径/键必须是文档化的那套（单源钉住，防漂移）。
+void live_opts_layout_is_the_shared_source(Runner& runner) {
+    auto ends_with = [](const std::wstring& s, const wchar_t* suf) {
+        const std::wstring t(suf);
+        return s.size() >= t.size() && s.compare(s.size() - t.size(), t.size(), t) == 0;
+    };
+    const PipelineOptions o = cs::apply::make_live_opts(L"C:\\skin", /*do_spi=*/false);
+    CHECK(o.skin_dir == std::wstring(L"C:\\skin"));
+    CHECK(o.root == cs::apply::Root::CurrentUser);
+    CHECK(o.sub_key == std::wstring(L"Control Panel\\Cursors"));
+    CHECK(o.do_spi == false);
+    CHECK(o.spi_flags == 0u);
+    CHECK(ends_with(o.applied_dir, L"\\applied"));
+    CHECK(ends_with(o.baseline_path, L"\\state\\baseline.ini"));
+}
+
 }  // namespace
 
 namespace cs::test {
@@ -189,6 +205,7 @@ void register_ui_cases(Runner& runner) {
     runner.add("report_marks_conflict_on_slot", &report_marks_conflict_on_slot);
     runner.add("report_surfaces_unmapped_produced", &report_surfaces_unmapped_produced);
     runner.add("apply_without_dir_is_missing_operand", &apply_without_dir_is_missing_operand);
+    runner.add("live_opts_layout_is_the_shared_source", &live_opts_layout_is_the_shared_source);
 }
 
 }  // namespace cs::test

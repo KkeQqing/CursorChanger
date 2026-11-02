@@ -2,6 +2,10 @@
 #include "app/verbs.h"
 #include "core/cli.h"
 #include "core/version.h"
+#include "ui/main_window.h"
+
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 
 #include <cstddef>
 #include <cstdio>
@@ -31,6 +35,13 @@ int main(int argc, char** argv) {
     using cs::core::Parsed;
     using cs::core::Status;
     using cs::core::Verb;
+
+    // 无参数 = 启动窗口（DESIGN §9.3）。exe 保持 CONSOLE 子系统（M5 追认决策）；
+    // 控制台的隐藏只在 run_window 的交互分支里做，避免截图自检时把调用方的控制台也藏掉。
+    // CLI 各动词路径完全不受影响，可验证性不降级（§9.2）。
+    if (argc < 2) {
+        return cs::ui::run_window();
+    }
 
     const Parsed p = cs::core::parse_args(argc, const_cast<const char* const*>(argv));
 

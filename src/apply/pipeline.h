@@ -88,4 +88,13 @@ RestoreResult reset_default(const PipelineOptions& opt, SpiResult& spi_out);
 // 供报告用：目录是否存在、有多少 .cur。不改变任何东西。
 uint32_t count_cur_files(const std::wstring& dir, std::vector<std::wstring>& names_out);
 
+// ---- 真机 options 的唯一构造点（M5b：GUI 与 CLI 共用，杜绝两条链各写一套路径常量而漂移）----
+
+// 当前可执行文件所在目录（无尾部分隔符；失败退化到 "."）。
+std::wstring exe_dir();
+
+// 真机方案键 + applied/state 相对布局的唯一定义处。do_spi=false 时不触发 SPI，
+// 供「只看效果不改变系统」的沙箱/预览路径（如窗口逐槽预览、截图自检）使用。
+PipelineOptions make_live_opts(const std::wstring& skin_dir, bool do_spi);
+
 }  // namespace cs::apply

@@ -23,18 +23,7 @@ using namespace apply;
 
 namespace {
 
-// 唯一表述处：真机方案键。沙箱测试用别的键，靠 PipelineOptions 传进去。
-constexpr const wchar_t* kCursorsSubKey = L"Control Panel\\Cursors";
 constexpr uint32_t kSettleMs = 200;   // probe.settle_ms；落点后等一拍，避免抓到过渡帧
-
-std::wstring exe_dir() {
-    wchar_t buf[4096];
-    const DWORD n = GetModuleFileNameW(nullptr, buf, 4096);
-    std::wstring p = (n == 0 || n >= 4096) ? std::wstring(L".") : std::wstring(buf, n);
-    const std::wstring::size_type s = p.find_last_of(L"\\/");
-    if (s == std::wstring::npos) return std::wstring(L".");
-    return p.substr(0, s);
-}
 
 // argv 走 UTF-8 转宽字符。已知限制：Windows 的 ANSI main 给的是本机代码页字节，
 // 因此**含非 ASCII 的路径参数不可靠**（真机闭环用的目录由我们自己生成，全 ASCII）。
@@ -51,16 +40,9 @@ std::wstring to_wide(std::string_view sv) {
 }
 
 PipelineOptions make_opts(const std::wstring& skin_dir, bool do_spi) {
-    const std::wstring base = exe_dir();
-    PipelineOptions o;
-    o.skin_dir = skin_dir;
-    o.applied_dir = base + L"\\applied";
-    o.root = Root::CurrentUser;
-    o.sub_key = kCursorsSubKey;
-    o.baseline_path = base + L"\\state\\baseline.ini";
-    o.do_spi = do_spi;
-    o.spi_flags = 0;
-    return o;
+    // 真机布局（applied/state/subkey）的唯一表述处在 apply::make_live_opts，
+    // GUI 与 CLI 都从这里取，两条链不可能各写一套路径常量而漂移（DESIGN §9.2 判据的落地机制）。
+    return make_live_opts(skin_dir, do_spi);
 }
 
 void ensure_parent_dir(const std::wstring& file_path) {
@@ -170,14 +152,14 @@ int run_apply(std::string_view skin_dir) {
         std::fprintf(stderr, "error: skin dir missing or not valid UTF-8\n");
         return 2;
     }
-    ensure_parent_dir(exe_dir() + L"\\state\\baseline.ini");
+    ensure_parent_dir(make_opts(std::wstring(), false).baseline_path);
     const PipelineResult r = apply_skin(make_opts(dir, true));
     report_pipeline(r);
     return r.ok() ? 0 : 1;
 }
 
 int run_restore() {
-    ensure_parent_dir(exe_dir() + L"\\state\\baseline.ini");
+    ensure_parent_dir(make_opts(std::wstring(), false).baseline_path);
     const PipelineOptions opt = make_opts(std::wstring(), true);
     SpiResult spi;
     bool loaded = false;
@@ -207,7 +189,7 @@ int run_live_check(std::string_view skin_dir) {
         std::fprintf(stderr, "error: skin dir missing or not valid UTF-8\n");
         return 2;
     }
-    ensure_parent_dir(exe_dir() + L"\\state\\baseline.ini");
+    ensure_parent_dir(make_opts(std::wstring(), false).baseline_path);
 
     const std::vector<ProbePoint> pts = probe_points();
     if (pts.empty()) {
@@ -303,7 +285,7 @@ int run_live_check(std::string_view skin_dir) {
         std::wstring v;
         bool found = false;
         const std::wstring nm(t[i].registry_name.begin(), t[i].registry_name.end());
-        read_sz(Root::CurrentUser, kCursorsSubKey, nm.c_str(), v, found);
+        read_sz(Root::CurrentUser, opt.sub_key.c_str(), nm.c_str(), v, found);
         const bool ours = found && v.find(L"\\applied\\") != std::wstring::npos;
         if (ours) ++lingering;
         std::wprintf(L"  %-12s present=%d ours=%d %ls\n", t[i].registry_name.data() ? nm.c_str() : L"?",
