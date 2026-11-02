@@ -47,6 +47,16 @@ struct ActionPlan {
 // UI 据此在未选目录时禁用「应用」按钮 —— 这条约束由测试钉住，见 tests_m5）。
 ActionPlan plan_for_action(GuiAction a, const std::string& skin_dir);
 
+// D13：两种还原是**两个按钮、两种确认文案**，不可混为一谈。确认文案是数据/业务，
+// 放这一层是为了能被单测钉住「两者必须不同」——UI 只负责原样显示，不自己编文案。
+struct ConfirmText {
+    bool need_confirm{false};
+    std::wstring title;
+    std::wstring body;
+};
+
+ConfirmText confirm_text_for(GuiAction a);
+
 // ---- 逐槽状态 + 结果面板（§324：部分认领是正常的，UI 要列出缺哪几槽）----
 struct SlotRow {
     core::SlotId slot{core::SlotId::Invalid};

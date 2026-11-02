@@ -55,6 +55,23 @@ ActionPlan plan_for_action(GuiAction a, const std::string& skin_dir) {
     return base_plan(GuiAction::Reset, "reset", "reset_default");
 }
 
+ConfirmText confirm_text_for(GuiAction a) {
+    switch (a) {
+    case GuiAction::Apply:
+        // 常规动作，不弹确认（避免每次应用都打断）。
+        return ConfirmText{false, std::wstring(), std::wstring()};
+    case GuiAction::Restore:
+        return ConfirmText{true, L"还原到基线",
+                           L"将把系统指针恢复到你首次应用前保存的基线快照。\n"
+                           L"（若从没应用过，则无可还原内容，会用复位默认兜底。）"};
+    case GuiAction::Reset:
+        return ConfirmText{true, L"复位系统默认",
+                           L"将清除 CursorSwitch 写入的全部自定义光标值，回到 Windows 默认方案。\n"
+                           L"这一步不依赖基线快照，是「退不回去」时的兜底出口。"};
+    }
+    return ConfirmText{true, L"确认操作", L"确定要执行该操作吗？"};
+}
+
 std::size_t ReportView::covered_count() const {
     std::size_t n = 0;
     for (const SlotRow& r : rows) {

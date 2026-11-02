@@ -50,7 +50,7 @@ CL %FLAGS% /Fo%OUTDIR%\ src\core\cli.cpp src\core\ir.cpp src\core\slots.cpp src\
    src\apply\report_model.cpp ^
    src\selfcheck\l1.cpp src\selfcheck\verify_live.cpp ^
    src\app\verbs.cpp src\ui\main_window.cpp src\app\main.cpp ^
-   /Fe%OUTDIR%\%APP% /link user32.lib gdi32.lib advapi32.lib comctl32.lib /SUBSYSTEM:CONSOLE > "%OUTDIR%\compile-app.log" 2>&1
+   /Fe%OUTDIR%\%APP% /link user32.lib gdi32.lib advapi32.lib comctl32.lib shell32.lib ole32.lib /SUBSYSTEM:CONSOLE > "%OUTDIR%\compile-app.log" 2>&1
 IF ERRORLEVEL 1 GOTO :L_FAIL_COMPILE
 
 REM ---- 5. compile tests ----

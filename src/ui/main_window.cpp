@@ -7,6 +7,8 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <objbase.h>   // CoInitializeEx / CoTaskMemFree
+#include <shlobj.h>    // SHBrowseForFolderW / SHGetPathFromIDListW / BROWSEINFOW
 
 #include <cstdio>
 #include <cwchar>
@@ -30,6 +32,7 @@ using apply::SlotRow;
 // ---- 控件 ID（无业务含义，仅 WM_COMMAND 分发用）----
 enum : int {
     IDC_SKIN_EDIT = 101,
+    IDC_BROWSE_BTN = 106,
     IDC_PREVIEW_BTN = 102,
     IDC_APPLY_BTN = 103,
     IDC_RESTORE_BTN = 104,
@@ -146,6 +149,21 @@ std::wstring env_w(const wchar_t* name) {
     return std::wstring(buf, n);
 }
 
+// 系统文件夹选择框；取消返回空串。
+std::wstring browse_for_folder(HWND owner) {
+    BROWSEINFOW bi{};
+    bi.hwndOwner = owner;
+    bi.lpszTitle = L"选择皮肤目录";
+    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+    LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
+    if (pidl == nullptr) return std::wstring();
+    wchar_t path[MAX_PATH] = {0};
+    std::wstring out;
+    if (SHGetPathFromIDListW(pidl, path)) out = path;
+    CoTaskMemFree(pidl);
+    return out;
+}
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     UiState* st = reinterpret_cast<UiState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 
@@ -163,8 +181,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
         int y = kMargin + 28;
         mk(hwnd, L"STATIC", L"皮肤目录:", SS_LEFT, kMargin, y, 80, kLabelH, 0, font);
-        p->edit = mk(hwnd, L"EDIT", L"", ES_AUTOHSCROLL, kMargin + 84, y, kClientW - 2 * kMargin - 84 - kBtnW - 6,
-                     kEditH, IDC_SKIN_EDIT, font);
+        const int edit_w = kClientW - 2 * kMargin - 84 - (kBtnW * 2) - 12;
+        p->edit = mk(hwnd, L"EDIT", L"", ES_AUTOHSCROLL, kMargin + 84, y, edit_w, kEditH,
+                     IDC_SKIN_EDIT, font);
+        mk(hwnd, L"BUTTON", L"浏览...", BS_PUSHBUTTON, kClientW - kMargin - (kBtnW * 2) - 6, y, kBtnW,
+           kBtnH, IDC_BROWSE_BTN, font);
         mk(hwnd, L"BUTTON", L"预览", BS_PUSHBUTTON, kClientW - kMargin - kBtnW, y, kBtnW, kBtnH,
            IDC_PREVIEW_BTN, font);
 
@@ -197,6 +218,18 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         const int id = LOWORD(wp);
         st->skin_dir = edit_text(st->edit);
         switch (id) {
+        case IDC_BROWSE_BTN: {
+            const std::wstring picked = browse_for_folder(hwnd);
+            if (!picked.empty()) {
+                st->skin_dir = picked;
+                if (st->edit) SetWindowTextW(st->edit, picked.c_str());
+                preview_only(st);   // 只 build_only，不碰注册表
+                if (st->cli_hint)
+                    SetWindowTextW(st->cli_hint,
+                                   (L"等价: cursorswitch --apply \"" + picked + L"\" (仅预览)").c_str());
+            }
+            return 0;
+        }
         case IDC_PREVIEW_BTN:
             preview_only(st);
             if (st->cli_hint)
@@ -208,14 +241,29 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             if (st->cli_hint)
                 SetWindowTextW(st->cli_hint, (L"等价: cursorswitch --apply \"" + st->skin_dir + L"\"").c_str());
             return 0;
-        case IDC_RESTORE_BTN:
+        case IDC_RESTORE_BTN: {
+            // D13：确认文案取自模型层 confirm_text_for（两还原两套），UI 不自己编。
+            const apply::ConfirmText ct = apply::confirm_text_for(apply::GuiAction::Restore);
+            if (ct.need_confirm && MessageBoxW(hwnd, ct.body.c_str(), ct.title.c_str(),
+                                               MB_OKCANCEL | MB_ICONINFORMATION) != IDOK) {
+                if (st->cli_hint) SetWindowTextW(st->cli_hint, L"已取消还原");
+                return 0;   // 取消 = 一个注册表写动作都不做
+            }
             do_restore(st);
             if (st->cli_hint) SetWindowTextW(st->cli_hint, L"等价: cursorswitch --restore");
             return 0;
-        case IDC_RESET_BTN:
+        }
+        case IDC_RESET_BTN: {
+            const apply::ConfirmText ct = apply::confirm_text_for(apply::GuiAction::Reset);
+            if (ct.need_confirm && MessageBoxW(hwnd, ct.body.c_str(), ct.title.c_str(),
+                                               MB_OKCANCEL | MB_ICONWARNING) != IDOK) {
+                if (st->cli_hint) SetWindowTextW(st->cli_hint, L"已取消复位");
+                return 0;
+            }
             do_reset(st);
             if (st->cli_hint) SetWindowTextW(st->cli_hint, L"等价: cursorswitch --reset");
             return 0;
+        }
         default:
             return 0;
         }
@@ -290,6 +338,7 @@ bool capture_window(HWND hwnd, const std::wstring& path) {
 }  // namespace
 
 int run_window() {
+    const HRESULT co = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     WNDCLASSEXW wc;
     ZeroMemory(&wc, sizeof(wc));
     wc.cbSize = sizeof(wc);
@@ -310,7 +359,10 @@ int run_window() {
     HWND hwnd = CreateWindowExW(0, wc.lpszClassName, L"CursorSwitch", style, CW_USEDEFAULT, CW_USEDEFAULT,
                                 wr.right - wr.left, wr.bottom - wr.top, nullptr, nullptr, wc.hInstance,
                                 nullptr);
-    if (!hwnd) return 1;
+    if (!hwnd) {
+        if (SUCCEEDED(co)) CoUninitialize();
+        return 1;
+    }
 
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
@@ -320,6 +372,7 @@ int run_window() {
         // 无人值守截图自检：画完就存图退出，不进入交互消息循环，绝不 apply/SPI。
         const bool ok = capture_window(hwnd, capture);
         DestroyWindow(hwnd);
+        if (SUCCEEDED(co)) CoUninitialize();
         return ok ? 0 : 1;
     }
 
@@ -332,6 +385,7 @@ int run_window() {
         TranslateMessage(&m);
         DispatchMessageW(&m);
     }
+    if (SUCCEEDED(co)) CoUninitialize();
     return static_cast<int>(m.wParam);
 }
 

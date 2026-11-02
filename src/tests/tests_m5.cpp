@@ -192,6 +192,22 @@ void live_opts_layout_is_the_shared_source(Runner& runner) {
     CHECK(ends_with(o.baseline_path, L"\\state\\baseline.ini"));
 }
 
+// D13：两种还原是两个动作、两套确认文案，必须互不相同；常规应用不弹确认。
+// 若把两者文案写成一样，这条必红 —— 正是 D13「分列」要求落地成判据。
+void confirm_texts_distinct_for_two_restores(Runner& runner) {
+    const ConfirmText ap = confirm_text_for(GuiAction::Apply);
+    const ConfirmText rs = confirm_text_for(GuiAction::Restore);
+    const ConfirmText zs = confirm_text_for(GuiAction::Reset);
+
+    CHECK(ap.need_confirm == false);           // 应用不打断
+    CHECK(rs.need_confirm == true);
+    CHECK(zs.need_confirm == true);
+    CHECK(!rs.title.empty() && !rs.body.empty());
+    CHECK(!zs.title.empty() && !zs.body.empty());
+    CHECK(rs.title != zs.title);               // 标题必须不同
+    CHECK(rs.body != zs.body);                 // 正文必须不同（兜底 vs 快照）
+}
+
 }  // namespace
 
 namespace cs::test {
@@ -206,6 +222,7 @@ void register_ui_cases(Runner& runner) {
     runner.add("report_surfaces_unmapped_produced", &report_surfaces_unmapped_produced);
     runner.add("apply_without_dir_is_missing_operand", &apply_without_dir_is_missing_operand);
     runner.add("live_opts_layout_is_the_shared_source", &live_opts_layout_is_the_shared_source);
+    runner.add("confirm_texts_distinct_for_two_restores", &confirm_texts_distinct_for_two_restores);
 }
 
 }  // namespace cs::test
