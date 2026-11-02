@@ -41,4 +41,7 @@ void register_png_cases(Runner& runner);
 // tests_m4.cpp：SVG 通道（原始输出探针 / 特性守卫 / 贴边 / 端到端）
 void register_svg_cases(Runner& runner);
 
+// tests_m5.cpp：M5a GUI/CLI 共用表现模型 + 动作意图（真解析器 / 真槽表为 oracle）
+void register_ui_cases(Runner& runner);
+
 }  // namespace cs::test
