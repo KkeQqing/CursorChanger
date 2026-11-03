@@ -244,7 +244,9 @@ RIFF [size] "ACON"
 > **4.4.2 合成已落地（V0.7，commit M12）**：`core/ani_format` 合成 RIFF/ACON（`iDispRate`=jiffies、
 > 每帧=完整 `.cur`、`bfAttributes=1`），`sidecar frames=/rate=` 经 `build_only` 接通（`tests_m12` 端到端
 > 用 `LoadCursorFromFileW` 证 OS **接受我们自造的 .ani** + reader 反解 nFrames/rate）。
-> **仍待真机（U22）**：OS 是否**按我们的 `iDispRate` 播放动画** —— 加载接受 ≠ 会转，只有人眼能定，未验。
+> **U22 已真机确证**：用产品管线合成 `rate=10`(jiffies) 的两帧动画（箭头↔红圈）apply 到 Arrow，
+> 用户肉眼见**约 6 次/秒交替**（10/60s≈166ms/帧 ⇔ ~6fps），证「OS 按我们设的 `iDispRate` 播放合成动画」；
+> 验完已 `--restore`，独立导出逐字节 == 皮肤态。
 
 ---
 
@@ -694,7 +696,7 @@ CursorSwitch/
 | U17 | `NWPen`（手写笔）的正确热点语义，以及它是否受「指针大小」体系管辖 | **未验证**：该槽是 M2b 实测才发现的，原计划完全没有；默认热点目前猜的是中心 | M5 目测校正 |
 | U18 | `CursorBaseSize` 是否就是「设置→辅助功能→鼠标指针→大小」滑条的存储位置 | **部分证据，仍未核销**：本机实测 `CursorBaseSize = 32`，与 `SM_CXCURSOR = 32` 一致（弱一致，不唯一）。要定案必须**动一次滑条**再读，属需要用户配合的实验，未做 | 用户配合时核销；在此之前 §7.4 仍用行为探测，不依赖此值 |
 | U19 | OS 是否把 `SizeNWSE`/`SizeNESW` 自动镜像到对角另一端 | **仍未验证，且 M2 的实验设计无法验证它**：真机闭环用的皮肤是**实心对称方块**，镜像后一模一样 —— 即使 OS 不镜像，这个皮肤也测不出来。要验必须换一张**反对角不对称**的对角图（例如 NW 端粗、SE 端细）再目测两端。**记为方法缺陷而非结论**，别把「没报异常」当成「验过了」 | **反对称夹具已备好（M7，commit `bf0a1a0`）**：`skin/sizenw.svg` / `skin/sizene.svg` 画成一端实心箭头、另一端渐细短尾，可在真机 L3 目测判是否被镜像；M7 仅离线自检素材合法性（build_only/L1），**未验镜像**。V1.0 验收前用这套真素材做 apply→L3 目测 |
-| U22 | 合成 `.ani` 的帧序引用语义（`iCurNumber`/`iIconNumber`、per-frame rate 的落点）能否被 OS 正确播放 | **未验证**：结构反解只证「同型可加载」，不证「能播放」 | M6 真机 |
+| U22 | 合成 `.ani` 的帧序引用语义（`iDispRate` 单位/落点、`bfAttributes` 内联完整 CUR 是否被采纳）能否被 OS 正确播放 | **已核销（真机）**：`rate=10` 两帧（箭头↔红圈）apply 到 Arrow，肉眼见约 6 次/秒交替（=10/60s），OS 按 `iDispRate`(jiffies) 播放合成动画；无 seq 顺序即帧序 | M6 真机（已完成） |
 | U23 | watcher 去抖/合并与「自动换指针」的真机表现（防抖动风暴、防读到半写文件、关闭即停） | **未验证**（纯去抖函数可离线单测，端到端只能真机） | M7 真机 |
 
 ---
