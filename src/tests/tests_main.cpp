@@ -218,6 +218,8 @@ int main(int argc, char** argv) {
     cs::test::register_svg_cases(runner);
     cs::test::register_ui_cases(runner);
     cs::test::register_channel_e2e_cases(runner);
+    // M7：对仓库真实 skin/ 的离线自检（三通道混装真素材，只 build_only 不碰注册表）
+    cs::test::register_real_skin_cases(runner);
 
     if (force_fail) {
         std::printf("[MODE] force-fail: injecting a case that must fail\n");

@@ -47,4 +47,7 @@ void register_ui_cases(Runner& runner);
 // tests_m6.cpp：三通道端到端集成（png/svg 正例 + 配对负对照 + .cur 透传回归 + 坏源不写注册表）
 void register_channel_e2e_cases(Runner& runner);
 
+// tests_m7.cpp：对真实 skin/ 的离线自检（build_only：全链覆盖/冲突/逐帧/L1 + 部分认领 + 全透明负对照）
+void register_real_skin_cases(Runner& runner);
+
 }  // namespace cs::test
