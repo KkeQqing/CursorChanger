@@ -4,6 +4,7 @@
 #include "core/claim.h"
 #include "core/cur_writer.h"
 #include "core/png_source.h"
+#include "core/sidecar.h"
 #include "core/slots.h"
 #include "core/svg_source.h"
 #include "selfcheck/l1.h"
@@ -123,10 +124,32 @@ bool build_source_bytes(const std::wstring& source, core::SlotId slot, std::vect
         return true;
     }
 
+    // 读取同名 sidecar `<stem>.meta`（§5.3）：只承载参数（size/hotspot/trim），不承载身份。
+    // 解析失败或未知 key ⇒ 该槽带原因失败（挡在写注册表前）；无 .meta 时走默认，行为不变。
+    core::Sidecar sc;
+    {
+        std::wstring meta = source;
+        const std::wstring::size_type dot = meta.find_last_of(L'.');
+        if (dot != std::wstring::npos) meta = meta.substr(0, dot) + L".meta";
+        std::vector<uint8_t> mraw;
+        if (read_file(meta, mraw)) {
+            const std::string mtext(mraw.begin(), mraw.end());
+            const core::SidecarParse sp = core::parse_sidecar(mtext, sc);
+            if (sp.status == core::SidecarStatus::Empty) {
+                sc = core::Sidecar{};
+            } else if (sp.status != core::SidecarStatus::Ok) {
+                error = "meta: " + sp.detail;
+                return false;
+            }
+        }
+    }
+
     core::CursorSpec spec;
     std::string detail;
     if (kind == ExtKind::Png) {
         core::PngOptions po;   // 默认 sizes{16,32,48} + allow_upscale=false（§10 参数总表）
+        if (sc.has_size) po.sizes = sc.sizes;
+        if (sc.has_hotspot) { po.has_hotspot_override = true; po.hotspot_at_source = sc.hotspot; }
         const core::PngStatus st =
             core::load_png_to_spec(raw.data(), raw.size(), slot, po, spec, detail);
         if (st != core::PngStatus::Ok) {
@@ -136,6 +159,9 @@ bool build_source_bytes(const std::wstring& source, core::SlotId slot, std::vect
         }
     } else if (kind == ExtKind::Svg) {
         core::SvgOptions so;   // 默认 work_resolution=1024 + sizes{16,32,48}（§10）
+        if (sc.has_size) so.sizes = sc.sizes;
+        if (sc.has_hotspot) { so.has_hotspot_override = true; so.hotspot_at_source = sc.hotspot; }
+        if (sc.has_trim) so.trim_transparent = (sc.trim == "auto");
         core::SvgReport rep;
         const core::SvgStatus st =
             core::load_svg_to_spec(raw.data(), raw.size(), slot, so, spec, rep, detail);

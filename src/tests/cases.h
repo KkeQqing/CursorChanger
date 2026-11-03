@@ -56,4 +56,7 @@ void register_build_image_cases(Runner& runner);
 // tests_m10.cpp：D21a `.ani` 透传通道（以 OS 加载器为独立 oracle；坏 .ani 挡在写册前）
 void register_ani_cases(Runner& runner);
 
+// tests_m11.cpp：§5.3 `.meta` sidecar 纯解析 + 端到端接通（size/hotspot 改变产物，坏 key 挡写册前）
+void register_sidecar_cases(Runner& runner);
+
 }  // namespace cs::test

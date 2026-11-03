@@ -224,6 +224,8 @@ int main(int argc, char** argv) {
     cs::test::register_build_image_cases(runner);
     // M10：D21a .ani 透传（OS 加载器为独立 oracle；坏 .ani 不写册）
     cs::test::register_ani_cases(runner);
+    // M11：§5.3 .meta sidecar 解析 + 端到端接通
+    cs::test::register_sidecar_cases(runner);
 
     if (force_fail) {
         std::printf("[MODE] force-fail: injecting a case that must fail\n");

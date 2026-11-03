@@ -394,10 +394,12 @@ rate = 90              ; 仅动画(D21b)：每帧停留毫秒，0=交系统默�
 
 未知 key → 报错（不忽略）；`hotspot` 越界 → 报错（§6 的 H5）。
 
-> **实现状态（诚实标注）**：截至 V0.6.3，代码**从不读取 `.meta`**（全仓无消费点，仅 png/svg 通道留了
-> `has_hotspot_override` 结构字段）。`.meta` 的解析器随 **D23（尺寸可配）** 一并落地，届时 `size=` /
-> `hotspot=` / `trim=` 生效；`frames=` / `rate=` 随 **D21b（动画合成）** 生效。落地前不得把它当可用特性
-> 写进用户文档（V0.6.3 已纠正一次同类误导）。
+> **实现状态（诚实标注）**：**`hotspot=` / `size=` / `trim=` 已落地并被 build 链消费**（commit M11）：
+> pipeline 读同目录 `<stem>.meta`，解析后把 size 覆盖 D8 默认档、hotspot 走 `has_hotspot_override`
+> 逐帧 `scale_hotspot`、trim 驱动 SVG 贴边；未知 key / 坏值 ⇒ 该槽带原因失败、挡在写注册表前
+> （测试 `tests_m11` 含端到端正/负，用 cur_reader 独立 oracle 证明确实改变了产出）。
+> **`frames=` / `rate=` 仍未接**（属 D21b 合成动画，随 `.ani` writer 落地）——现在出现会按「未知 key」拒，
+> 绝不假装已支持动画合成。
 
 ---
 
