@@ -94,11 +94,11 @@
 | D5 | `.cur` 通道 | **passthrough**：原样复制文件，绝不重编码 | 重编码会丢多帧/多尺寸并引入 alpha 误差；passthrough 成本≈0 且不会把好素材做坏 | 已定 |
 | D6 | 中间表示 | `CursorSpec{ frames[], hotspots[], source_kind }`，像素统一为 **BGRA32 premultiplied** | 单点定义像素约定，三条通道归一 | 已定 |
 | D7 | CUR 编码 | 只写 **DIB(BMP) 条目**，不写 PNG 压缩条目 | PNG-in-CUR 的合法性由系统光标加载路径决定，未证实；DIB 是无争议路径。省掉一整类不确定 | 已定（不依赖实测） |
-| D8 | 帧集合 | 每素材产出 **16/32/48** 三档；`svg/cur` 若自带多尺寸则保留全部 | 最终显示尺寸由「设置→指针大小」+ DPI 决定，猜单尺寸是错的；多帧让系统挑 | 已定 |
+| D8 | 帧集合 | 每素材产出 **16/32/48** 三档；`svg/cur` 若自带多尺寸则保留全部。**V0.7 起这只是默认档位**，实际档位数由 `settings.ini` 注入（见 D23） | 最终显示尺寸由「设置→指针大小」+ DPI 决定，猜单尺寸是错的；多帧让系统挑 | 已定 |
 | D9 | 槽位识别 | 文件名 stem（去后缀、去路径）经**别名表**归一，大小写不敏感；不支持按尺寸/DPI 后缀区分 | 别名表是数据，不是 if；见 §5.2 | 已定 |
 | D10 | hotspot | 每槽一条默认规则（§5.3）+ sidecar `<stem>.meta` 覆盖 | 文件名只回答「我是哪个槽位」，不承载参数 —— 这条必须守住 | 已定（默认值为**需目测校正初值**） |
 | D11 | 产物落盘 | `<程序目录>\applied\`（可配置），先写 `*.tmp` 再 `MoveFileExW(REPLACE_EXISTENT)` | 系统可能正持有旧文件；原子替换避免半写状态被读到 | 已定 |
-| D12 | 生效触发 | v1 = 窗口「应用」按钮 / CLI `--apply`；不做 watcher | 「换图即换皮肤」需常驻进程，成本与体验另议 → BACKLOG | 已定 |
+| D12 | 生效触发 | v1 = 窗口「应用」按钮 / CLI `--apply`。**V0.7 起 watcher 作为可选自动生效模式毕业**（默认关闭、显式开启，见 D22）；核心手动触发不变 | 「换图即换皮肤」由 opt-in watcher 承担，不再一刀切排除；成本与风险记在 D22 | 已定（V0.7 修订） |
 | D13 | 还原语义 | 两个独立动作：① 还原到运行前快照 ② 复位系统默认方案 | 用户「一键还原」有两种意图，合成一个必然有一方是错的 | 已定 |
 | D14 | 提权 | 一律不做。检测不到权限就直接报错，不重试不绕路 | 非目标 | 已定 |
 | D15 | 目录布局 | 单 exe + `skin/` + `config/settings.ini` + `state/baseline.ini` | — | 已定 |
@@ -107,6 +107,9 @@
 | D18 | CRT 链接 | **`/MT` 静态 CRT**。app 用 **`WINDOWS` 子系统**（入口 `/ENTRY:mainCRTStartup` 复用现有 `main()`），tests 保持 `CONSOLE` 子系统 | 单 exe 免装 VC 运行时；也让 §11-M0 的尺寸阈值有意义（`/MD` 下 15KB 是正常值，阈值判据会假红）。**M5 曾定「保持 CONSOLE + ShowWindow(SW_HIDE) 隐藏」**，代价是纯 GUI 启动闪一次控制台——该隐藏只在 `main()` 之后生效，控制台窗口早在进程创建时就被 OS 分配，闪框无法靠隐藏消除。**V0.6.2 改判（用户要求 GUI 启动静默、不分配控制台）**：app 切 `WINDOWS` 子系统后双击启动不再有任何控制台窗口。CLI 输出捕获链不削弱：① 重定向到文件/管道（Job Object 无人值守捕获的形态）时，`WINDOWS` 子系统同样经 STARTUPINFO 继承句柄，`printf` 照旧落进管道；② 从交互式终端直接带参运行时无继承控制台，CLI 分支启动时 `AttachConsole(ATTACH_PARENT_PROCESS)` 再 `freopen("CONOUT$","w",stdout/stderr)` 接回。tests 必须留 `CONSOLE`：harness 退出码=失败数、且 `--probe-*` 依赖 stdout。**代价**：从终端直接跑（未重定向）需父控制台存在才看得到输出；`Start-Process` 这类脱离控制台的启动方式下 CLI 的 stdout 取不到（动作仍执行）。| 已定（V0.6.2 改判） |
 | D19 | vendor 溯源 | 每个 vendor 文件在 `vendor/README.md` 记录 **来源 URL + sha256 + 许可 + 拉取命令**；文件头版本行作一致性对照 | 本机 GitHub raw 直连已被实测 reset（见 D20），无法依赖构建期联网校验，只能入库时固定并留可核对指纹 | 已定 |
 | D20 | vendor 拉取通道 | 允许改用 CDN 镜像（实测 `fastly.jsdelivr.net` 可用，`cdn.jsdelivr.net` 被中断、`raw.githubusercontent.com` 被 reset）；**入库前必须校验内容签名**（如 stb 头部 `stb_image - v2.30`）+ 记录 sha256 | 镜像内容不保证逐字节等于上游：校验不通过就不入库，禁止「下下来了就用」 | 已定 |
+| D21 | 序列帧动画 `.ani` | 两形态：**(a) `.ani` 透传**（现成动画光标按槽名认领，原样作为 scheme 值，不重编码）；**(b) 由多帧合成 `.ani`**（帧序列与每帧停留取自槽位 sidecar `<stem>.meta` 的 `frames=`/`rate=`，见 §5.4）。容器格式**以 Step-0 反解微软自带 `aero_busy.ani` 为准**：`RIFF 'ACON'` + `'anih'`(9×DWORD) + `LIST 'fram'`，帧 chunk 的 FourCC 实测为 **`icon`**（**不是** `ani `），每帧内嵌一个完整光标资源；`anih.speed` 实测为 0，帧序引用 iCurCount/iIconCount | 让用户直接用已有动画光标包 + 可选自合成；`.meta` 解析是 (b) 的前置（当前未实现，见 BACKLOG） | **已定（结构）/ 待实测 U7（是否真会动画 + 帧数/尺寸/速率上限）** |
+| D22 | watcher 自动生效 | 可选后台 `ReadDirectoryChangesW` 监听当前皮肤目录，变更经**去抖**（`watcher.debounce_ms`）后**重跑同一条 §7.1 apply 管线**并刷新面板；默认关闭，GUI/CLI 显式开启 | 满足「换图即生效」；代价：它**会自动改用户正在用的指针**（系统状态，须 §8 单独授权），且要防抖、防写盘风暴、防半写文件被读到（配合 D11 原子替换） | 已定（默认关；生效与去抖表现=待真机） |
+| D23 | 输出尺寸可配置 | 落地 `config/settings.ini` 行式解析（复用 baseline/.meta 同一极简语法），把 `frames.sizes`（默认 `16,32,48`）与 `frames.allow_upscale`（默认 false）注入 PNG/SVG 通道；GUI 提供档位选择；`writer.max_dir_entries` 随所选档数放宽 | 兑现 §10 既有预留；单 exe、零外部依赖不变 | 已定 |
 
 **SVG 通道是本设计的外部硬不确定点，M0 已把它收窄成一个决策题。** 实测结论：本机无 Rust → resvg 无法在本机自建。退路按优先级：① 装 Rust 工具链后自库（引入工具链成本，仍须验证 C ABI）；② **`nanosvg` + 加宽的特性守卫**（无工具链成本，代价是支持的 SVG 子集更小，守卫必须把不支持项**拒绝渲染并报因**而不是凑一张错的图）；③ 找预编译的 resvg C API 包（依赖第三方发布物，来源可信度需单独判定，暂不作为默认路径）。
 另：先前写的「系统 `WIC` 不支持 SVG」属**凭既有知识、本机未实测**，若真要依赖它必须实测（见 U11）。
