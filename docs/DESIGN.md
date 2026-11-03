@@ -609,6 +609,7 @@ CursorSwitch/
 | `probe.reapply_rounds` | `2` | 用「再应用一次皮肤」作对照实验次数 | M2 |
 | `probe.settle_ms` | `200` | 落点后等待，防抖/防过渡动画 | M2 |
 | `watcher.debounce_ms` | `300` | D22 目录变更合并窗口（原「仅 BACKLOG watcher 用」的 `probe.debounce_ms` 归此） | M7 |
+| `watcher.max_wait_ms` | `1000` | D22 封顶：持续风暴最迟每 max_wait 触发一次，防「永不重放」的饿死（`§7.5`/debounce 纯函数） | M7 |
 | `watcher.enable` | `false` | D22 自动生效总开关，默认关 | M7 |
 | `watcher.backend` | `readdirchanges` | `ReadDirectoryChangesW`；轮询为后备 | M7 |
 | `ani.default_rate_jiffies` | `6` | D21b 合成 `.ani` 每帧默认停留（jiffies，1/60 秒；非毫秒） | M6 |

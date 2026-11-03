@@ -65,4 +65,7 @@ void register_ani_writer_cases(Runner& runner);
 // tests_m13.cpp：D23 全局 config/settings.ini 解析 + 端到端生效（含 allow_upscale / 坏文件中止）
 void register_settings_cases(Runner& runner);
 
+// tests_m14.cpp：watcher 去抖/合并纯函数（M7 判据①，含封顶防饿死、单调性自证）
+void register_debounce_cases(Runner& runner);
+
 }  // namespace cs::test
