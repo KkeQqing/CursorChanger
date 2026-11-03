@@ -13,6 +13,20 @@
 
 namespace {
 
+// app 已切 WINDOWS 子系统（D18 V0.6.2）：从交互式终端直接带参运行时进程没有继承控制台，
+// printf 会落空。这里**只在没有可用输出句柄时**才 AttachConsole 接回父控制台 —— 若 stdout
+// 已被重定向成管道/文件（Job Object 无人值守捕获的形态），句柄本就有效，绝不去动它，
+// 否则会打断这条已验证的输出捕获链。
+void wire_cli_stdio_if_needed() {
+    const HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (out != nullptr && out != INVALID_HANDLE_VALUE) return;  // 已继承/重定向，printf 有效
+    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+        std::FILE* tmp = nullptr;
+        freopen_s(&tmp, "CONOUT$", "w", stdout);
+        freopen_s(&tmp, "CONOUT$", "w", stderr);
+    }
+}
+
 void print_usage() {
     std::size_t n = 0;
     const cs::core::VerbSpec* table = cs::core::verb_table(n);
@@ -37,12 +51,13 @@ int main(int argc, char** argv) {
     using cs::core::Status;
     using cs::core::Verb;
 
-    // 无参数 = 启动窗口（DESIGN §9.3）。exe 保持 CONSOLE 子系统（M5 追认决策）；
-    // 控制台的隐藏只在 run_window 的交互分支里做，避免截图自检时把调用方的控制台也藏掉。
-    // CLI 各动词路径完全不受影响，可验证性不降级（§9.2）。
+    // 无参数 = 启动窗口（DESIGN §9.3）。app 是 WINDOWS 子系统（D18 V0.6.2）：双击/无参启动
+    // 根本不会分配控制台，故无需再 ShowWindow(SW_HIDE) 去藏那个闪框 —— 闪框已从源头消失。
+    // 带参数走 CLI 时，按需接回父控制台（见 wire_cli_stdio_if_needed），可验证性不降级（§9.2）。
     if (argc < 2) {
         return cs::ui::run_window();
     }
+    wire_cli_stdio_if_needed();
 
     const Parsed p = cs::core::parse_args(argc, const_cast<const char* const*>(argv));
 

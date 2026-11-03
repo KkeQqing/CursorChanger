@@ -384,7 +384,9 @@ int run_window() {
         return ok ? 0 : 1;
     }
 
-    // 交互启动才藏控制台：exe 是 CONSOLE 子系统（M5 追认），GUI 模式下不留黑框。
+    // 仅作防御：exe 现为 WINDOWS 子系统（D18 V0.6.2），无参启动根本不会有控制台，
+    // GetConsoleWindow() 通常返回 NULL、这里就是 no-op。保留一次隐藏是为了万一被某种
+    // 脱离了父且分配了新控制台的启动方式带进来时也不漏黑框。
     HWND console = GetConsoleWindow();
     if (console) ShowWindow(console, SW_HIDE);
 

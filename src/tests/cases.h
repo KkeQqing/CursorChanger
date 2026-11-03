@@ -50,4 +50,7 @@ void register_channel_e2e_cases(Runner& runner);
 // tests_m7.cpp：对真实 skin/ 的离线自检（build_only：全链覆盖/冲突/逐帧/L1 + 部分认领 + 全透明负对照）
 void register_real_skin_cases(Runner& runner);
 
+// tests_m8.cpp：构建产物子系统守卫（D18 V0.6.2：app=WINDOWS GUI / tests=CONSOLE CUI 的非对称）
+void register_build_image_cases(Runner& runner);
+
 }  // namespace cs::test

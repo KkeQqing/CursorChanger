@@ -220,6 +220,8 @@ int main(int argc, char** argv) {
     cs::test::register_channel_e2e_cases(runner);
     // M7：对仓库真实 skin/ 的离线自检（三通道混装真素材，只 build_only 不碰注册表）
     cs::test::register_real_skin_cases(runner);
+    // M8：构建产物子系统守卫（D18 改判的可执行钉子：app GUI / tests CUI）
+    cs::test::register_build_image_cases(runner);
 
     if (force_fail) {
         std::printf("[MODE] force-fail: injecting a case that must fail\n");

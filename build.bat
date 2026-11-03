@@ -58,7 +58,7 @@ CL %FLAGS% /Fo%OUTDIR%\ src\core\cli.cpp src\core\ir.cpp src\core\slots.cpp src\
    src\selfcheck\l1.cpp src\selfcheck\verify_live.cpp ^
    src\app\verbs.cpp src\ui\main_window.cpp src\app\main.cpp ^
    "%OUTDIR%\app.res" ^
-   /Fe%OUTDIR%\%APP% /link user32.lib gdi32.lib advapi32.lib comctl32.lib shell32.lib ole32.lib /SUBSYSTEM:CONSOLE > "%OUTDIR%\compile-app.log" 2>&1
+   /Fe%OUTDIR%\%APP% /link user32.lib gdi32.lib advapi32.lib comctl32.lib shell32.lib ole32.lib /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup > "%OUTDIR%\compile-app.log" 2>&1
 IF ERRORLEVEL 1 GOTO :L_FAIL_COMPILE
 
 REM ---- 5. compile tests ----
@@ -70,7 +70,7 @@ CL %FLAGS% /Fo%OUTDIR%\ src\core\cli.cpp src\core\ir.cpp src\core\slots.cpp ^
     src\apply\report_model.cpp ^
     src\tests\tests_main.cpp src\tests\tests_tables.cpp src\tests\tests_cur.cpp ^
     src\tests\tests_l1_probe.cpp src\tests\tests_registry_probe.cpp src\tests\tests_m2.cpp ^
-     src\tests\tests_m3.cpp src\tests\tests_m4.cpp src\tests\tests_m5.cpp src\tests\tests_m6.cpp src\tests\tests_m7.cpp src\tests\emit_skin.cpp ^
+     src\tests\tests_m3.cpp src\tests\tests_m4.cpp src\tests\tests_m5.cpp src\tests\tests_m6.cpp src\tests\tests_m7.cpp src\tests\tests_m8.cpp src\tests\emit_skin.cpp ^
    /Fe%OUTDIR%\%TESTS% /link user32.lib gdi32.lib advapi32.lib /SUBSYSTEM:CONSOLE > "%OUTDIR%\compile-tests.log" 2>&1
 IF ERRORLEVEL 1 GOTO :L_FAIL_COMPILE
 
