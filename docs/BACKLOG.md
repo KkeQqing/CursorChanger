@@ -8,6 +8,6 @@
 - 逐 DPI 素材集与多帧策略优化
 - 光标包导入/导出（方案打包）
 - hotspot 可视化编辑器
-- comctl32 v6 主题化（manifest + rc 接入）：M5b/M5c 用核心 Win32 控件即可跑通并可截图，D2 的「v6 控件」外观推迟——属可见性偏离，见 V0.6 总结 §2
+- comctl32 v6 主题化（manifest + rc 接入）：M5b/M5c 用核心 Win32 控件即可跑通并可截图，D2 的「v6 控件」外观推迟——属可见性偏离，见 V0.6 总结 §2。**已落地（commit `4da864d`）**：app.manifest(Common-Controls 6.0 + asInvoker) + app.rc(RT_MANIFEST id1) + build.bat 接 rc + InitCommonControlsEx；实测 IsThemeActive=1、OpenThemeData 有效、与无 manifest 版截图 diff 15249px（主题化确证）。此条按「只进不出」保留仅作溯源。
 - 提权写入 HKU\.DEFAULT（登录面/UAC 光标，D14 排除，需另行立项）
 - 多语言 UI
