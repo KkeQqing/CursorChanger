@@ -96,7 +96,7 @@
 | D15 | 目录布局 | 单 exe + `skin/` + `config/settings.ini` + `state/baseline.ini` | — | 已定 |
 | D16 | vendor | `vendor/` 入库 | 本机 GitHub 直连偶发不可达，必须离线可构建 | 已定 |
 | D17 | 测试形态 | 自写极简断言 harness（返回码 = 失败数），`tests/golden/` 存基线字节 | 不引 gtest 以免再加一层构建依赖 | 已定 |
-| D18 | CRT 链接 | **`/MT` 静态 CRT**，M0–M4 用 `CONSOLE` 子系统 | 单 exe 免装 VC 运行时；也让 §11-M0 的尺寸阈值有意义（`/MD` 下 15KB 是正常值，阈值判据会假红）。**M5 已定（追认）**：GUI 与 CLI 共用单 exe 时**保持 CONSOLE 子系统**，无参数启动窗口时 `GetConsoleWindow()`+`ShowWindow(SW_HIDE)` 隐藏控制台（仅在交互分支隐藏，截图自检不动调用方控制台）；理由：CLI 的 L3/probe 无人值守输出捕获（Job Object 管道）依赖 stdout，改 WINDOWS 子系统会牵动这条链。代价：纯 GUI 启动有一次控制台闪框（可接受）。| 已定 |
+| D18 | CRT 链接 | **`/MT` 静态 CRT**。app 用 **`WINDOWS` 子系统**（入口 `/ENTRY:mainCRTStartup` 复用现有 `main()`），tests 保持 `CONSOLE` 子系统 | 单 exe 免装 VC 运行时；也让 §11-M0 的尺寸阈值有意义（`/MD` 下 15KB 是正常值，阈值判据会假红）。**M5 曾定「保持 CONSOLE + ShowWindow(SW_HIDE) 隐藏」**，代价是纯 GUI 启动闪一次控制台——该隐藏只在 `main()` 之后生效，控制台窗口早在进程创建时就被 OS 分配，闪框无法靠隐藏消除。**V0.6.2 改判（用户要求 GUI 启动静默、不分配控制台）**：app 切 `WINDOWS` 子系统后双击启动不再有任何控制台窗口。CLI 输出捕获链不削弱：① 重定向到文件/管道（Job Object 无人值守捕获的形态）时，`WINDOWS` 子系统同样经 STARTUPINFO 继承句柄，`printf` 照旧落进管道；② 从交互式终端直接带参运行时无继承控制台，CLI 分支启动时 `AttachConsole(ATTACH_PARENT_PROCESS)` 再 `freopen("CONOUT$","w",stdout/stderr)` 接回。tests 必须留 `CONSOLE`：harness 退出码=失败数、且 `--probe-*` 依赖 stdout。**代价**：从终端直接跑（未重定向）需父控制台存在才看得到输出；`Start-Process` 这类脱离控制台的启动方式下 CLI 的 stdout 取不到（动作仍执行）。| 已定（V0.6.2 改判） |
 | D19 | vendor 溯源 | 每个 vendor 文件在 `vendor/README.md` 记录 **来源 URL + sha256 + 许可 + 拉取命令**；文件头版本行作一致性对照 | 本机 GitHub raw 直连已被实测 reset（见 D20），无法依赖构建期联网校验，只能入库时固定并留可核对指纹 | 已定 |
 | D20 | vendor 拉取通道 | 允许改用 CDN 镜像（实测 `fastly.jsdelivr.net` 可用，`cdn.jsdelivr.net` 被中断、`raw.githubusercontent.com` 被 reset）；**入库前必须校验内容签名**（如 stb 头部 `stb_image - v2.30`）+ 记录 sha256 | 镜像内容不保证逐字节等于上游：校验不通过就不入库，禁止「下下来了就用」 | 已定 |
 
