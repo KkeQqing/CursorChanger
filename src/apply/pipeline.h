@@ -7,6 +7,7 @@
 #include "apply/baseline.h"
 #include "apply/registry.h"
 #include "apply/spi.h"
+#include "core/settings.h"
 #include "selfcheck/verify_live.h"
 
 #include <cstdint>
@@ -80,6 +81,10 @@ struct PipelineResult {
 
 // 只做「扫描 + 认领 + 落地 + L1」，**不碰注册表**。用于在没有授权时也能验证全链前半段。
 PipelineResult build_only(const PipelineOptions& opt);
+
+// 读取并解析 settings.ini（IO 在 apply 层、解析在 core）。文件缺失 => 返回 true 且 out 为空
+// （调用方用内置默认）；存在但解析失败 => 返回 false + err。build_only 与 watcher 共用同一读取路径。
+bool load_settings(const std::wstring& path, core::Settings& out, std::string& err);
 
 // 完整 apply：build_only 之后写注册表并触发 SPI。需要真机授权（沙箱键除外）。
 PipelineResult apply_skin(const PipelineOptions& opt);

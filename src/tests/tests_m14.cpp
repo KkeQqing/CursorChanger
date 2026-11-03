@@ -11,6 +11,7 @@
 #include <vector>
 
 using cs::core::compute_replay_times;
+using cs::core::Debouncer;
 using cs::test::Runner;
 
 namespace {
@@ -64,6 +65,29 @@ void register_debounce_cases(Runner& runner) {
         for (std::size_t i = 1; i < rp.size(); ++i) CHECK(rp[i] > rp[i - 1]);
         // 手算：0..31 合并(first0,deadline随事件推到 31+50=81)；200>=81→先结算81，再 200..202→252
         CHECK(rp == v({81, 252}));
+    });
+
+    // 直接测有状态 Debouncer 的实时契约（UI 线程就是这么用的）：on_event 推进 deadline、
+    // due 判定、fire 后清 pending（下一条事件另起突发）——与 compute_replay_times 同一实现，
+    // 这条把「实时用法」钉死，避免 UI 用错语义而批式测试仍绿。
+    runner.add("debouncer_stateful_ui_contract", [](Runner& runner) {
+        Debouncer d(50, 1000);
+        CHECK(!d.pending());
+        d.on_event(100);
+        CHECK(d.pending());
+        CHECK(!d.due(120));                 // 120 < 150
+        CHECK(d.next_deadline() == 150);
+        d.on_event(110);                    // 110<150 → deadline 右移到 160
+        CHECK(d.next_deadline() == 160);
+        CHECK(d.due(160));                  // 到点
+        d.fire(160);
+        CHECK(!d.pending());                // fire 后清空，等待下一条另起突发
+        d.on_event(200);                    // 新突发
+        CHECK(d.pending() && d.next_deadline() == 250);
+        // 封顶：同一突发内 deadline 被 first+max_wait 压住（不封顶会一路右推到 last+debounce）
+        Debouncer c(50, 80);
+        for (uint64_t t = 0; t <= 70; t += 10) c.on_event(t);   // 0..70 都在同一窗口
+        CHECK(c.next_deadline() == 80);                            // 无封顶会是 70+50=120
     });
 }
 

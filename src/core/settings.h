@@ -17,6 +17,11 @@ inline constexpr uint32_t kSettingsMaxDimension = 256;
 struct Settings {
     bool has_frames_sizes{false};
     std::vector<uint32_t> frames_sizes;      // 覆盖内置 {16,32,48}
+
+    bool has_debounce_ms{false};
+    uint64_t debounce_ms{0};                 // §10 watcher.debounce_ms
+    bool has_max_wait_ms{false};
+    uint64_t max_wait_ms{0};                 // §10 watcher.max_wait_ms
 };
 
 enum class SettingsStatus : uint8_t { Ok, Empty, BadSyntax, UnknownKey, BadValue };

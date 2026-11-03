@@ -283,6 +283,25 @@ uint32_t count_source_files(const std::wstring& dir, std::vector<std::wstring>& 
     return static_cast<uint32_t>(names_out.size());
 }
 
+bool load_settings(const std::wstring& path, core::Settings& out, std::string& err) {
+    out = core::Settings{};
+    err.clear();
+    std::vector<uint8_t> raw;
+    if (!read_file(path, raw)) return true;  // 缺失/读不到 => 空配置（调用方用内置默认），不算错
+    const std::string text(raw.begin(), raw.end());
+    const core::SettingsParse sp = core::parse_settings(text, out);
+    if (sp.status == core::SettingsStatus::Empty) {
+        out = core::Settings{};
+        return true;
+    }
+    if (sp.status != core::SettingsStatus::Ok) {
+        err = sp.detail;
+        out = core::Settings{};
+        return false;
+    }
+    return true;
+}
+
 PipelineResult build_only(const PipelineOptions& opt) {
     PipelineResult r;
     std::vector<std::wstring> names;
@@ -299,17 +318,11 @@ PipelineResult build_only(const PipelineOptions& opt) {
     {
         std::wstring cfg = opt.settings_path;
         if (cfg.empty()) cfg = exe_dir() + L"\\config\\settings.ini";
-        std::vector<uint8_t> craw;
-        if (read_file(cfg, craw)) {
-            const std::string ctext(craw.begin(), craw.end());
-            const core::SettingsParse sp = core::parse_settings(ctext, settings);
-            if (sp.status == core::SettingsStatus::Empty) {
-                settings = core::Settings{};
-            } else if (sp.status != core::SettingsStatus::Ok) {
-                r.aborted_before_registry = true;
-                r.abort_reason = "settings: " + sp.detail;
-                return r;
-            }
+        std::string serr;
+        if (!load_settings(cfg, settings, serr)) {
+            r.aborted_before_registry = true;
+            r.abort_reason = "settings: " + serr;   // 存在但坏 => 中止，绝不静默用默认
+            return r;
         }
     }
 

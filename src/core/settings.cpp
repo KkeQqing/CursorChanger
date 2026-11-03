@@ -70,6 +70,20 @@ SettingsParse parse_settings(const std::string& text, Settings& out) {
                 return r;
             }
             out.has_frames_sizes = true;
+        } else if (key == "watcher.debounce_ms" || key == "watcher.max_wait_ms") {
+            uint64_t n = 0;
+            bool ok = !val.empty();
+            for (char c : val) {
+                if (std::isdigit(static_cast<unsigned char>(c)) == 0) { ok = false; break; }
+                n = n * 10u + static_cast<unsigned>(c - '0');
+            }
+            if (!ok) {
+                r.status = SettingsStatus::BadValue;
+                r.detail = "want non-negative ms: " + val;
+                return r;
+            }
+            if (key == "watcher.debounce_ms") { out.debounce_ms = n; out.has_debounce_ms = true; }
+            else { out.max_wait_ms = n; out.has_max_wait_ms = true; }
         } else {
             r.status = SettingsStatus::UnknownKey;
             r.detail = "unknown key: " + key;

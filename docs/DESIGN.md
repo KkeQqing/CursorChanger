@@ -512,6 +512,14 @@ D11 原子替换），并把新结果刷新到 §9 面板。三条硬约束：
 可测接缝：把「事件流 → 是否触发一次重放」的**去抖/合并**做成纯函数（喂带时间戳的事件序列断言输出），
 其余（真的自动换指针、去抖体感、防抖风暴）只能真机判 → 新增 U23。
 
+> **实现状态（M7，进行中）**：判据①（纯去抖/合并）**已落地** —— `core/debounce` 的 `Debouncer` 是单一
+> 真身、`compute_replay_times` 是其批式折叠（M14 覆盖），另设**实时契约直测**（`on_event/due/fire`+封顶），
+> 实测能抓到批式折叠看不见的 bug（`fire` 不清 pending 时仅直测红）。②接线**已落地**：`ui` 后台线程
+> `ReadDirectoryChangesW`(overlapped)→`PostMessage` marshal→主线程 `Debouncer`+`SetTimer`→复用同一条
+> `do_apply`；`.tmp` 中间名忽略（只认原子替换后的最终名）；**默认关闭**、按钮显式开关、`WM_DESTROY` 回收
+> 线程/句柄；`debounce_ms/max_wait_ms` 走 §10 `settings.ini`（缺则 300/1000）。③真机（改指针、风暴/半写
+> 体感）**未做**、需用户单独放行 → **U23 仍开放，M7 未结**。
+
 ---
 
 ## 8. 三级自检与证据规范

@@ -98,6 +98,36 @@ void register_settings_cases(Runner& runner) {
         CHECK(r.abort_reason.find("unknown key") != std::string::npos);
         CHECK(r.produced.empty());   // 中止在扫描之后、任何产出/写册之前
     });
+
+    // watcher.* 键解析（§10）
+    runner.add("settings_parses_watcher_keys", [](Runner& runner) {
+        Settings s;
+        CHECK(parse_settings("watcher.debounce_ms = 300\nwatcher.max_wait_ms = 1000\n", s).status ==
+              SettingsStatus::Ok);
+        CHECK(s.has_debounce_ms && s.debounce_ms == 300);
+        CHECK(s.has_max_wait_ms && s.max_wait_ms == 1000);
+        CHECK(parse_settings("watcher.debounce_ms = fast\n", s).status == SettingsStatus::BadValue);
+    });
+
+    // load_settings 文件 IO：缺=空不报错 / 坏=报错 / 好=取值
+    runner.add("load_settings_missing_bad_ok", [](Runner& runner) {
+        const std::wstring dir = L"build\\m13_ls";
+        mkdir_p(dir);
+        core::Settings s;
+        std::string err;
+        // 缺失
+        CHECK(cs::apply::load_settings(dir + L"\\nope.ini", s, err) == true);
+        CHECK(!s.has_frames_sizes && !s.has_debounce_ms);
+        // 好
+        CHECK(put_text(dir + L"\\ok.ini", "frames.sizes = 16,32\nwatcher.debounce_ms = 250\n"));
+        CHECK(cs::apply::load_settings(dir + L"\\ok.ini", s, err) == true);
+        CHECK(s.has_frames_sizes && s.frames_sizes.size() == 2);
+        CHECK(s.has_debounce_ms && s.debounce_ms == 250);
+        // 坏
+        CHECK(put_text(dir + L"\\bad.ini", "frames.bogus = 1\n"));
+        CHECK(cs::apply::load_settings(dir + L"\\bad.ini", s, err) == false);
+        CHECK(!err.empty());
+    });
 }
 
 }  // namespace cs::test

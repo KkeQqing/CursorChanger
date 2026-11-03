@@ -3,6 +3,7 @@
 
 #include "apply/pipeline.h"
 #include "apply/report_model.h"
+#include "core/debounce.h"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -40,10 +41,16 @@ enum : int {
     IDC_APPLY_BTN = 103,
     IDC_RESTORE_BTN = 104,
     IDC_RESET_BTN = 105,
+    IDC_WATCHER_TOGGLE = 107,
     IDC_STATUS_LIST = 200,
     IDC_SUMMARY = 201,
     IDC_CLI_HINT = 202,
 };
+
+// watcher 的线程→UI marshal 与到点重放（§7.5）
+constexpr UINT WM_APP_WATCHER_EVENT = WM_APP + 1;   // 后台线程报「目录有变更」
+constexpr UINT WM_APP_WATCHER_DIED = WM_APP + 2;   // 后台线程意外退出（如目录被删）
+constexpr UINT_PTR kWatcherTimer = 0xB7u;          // 去抖到点定时器
 
 // ---- 窗口几何（手写布局，D2；纯像素字面量，非业务数值）----
 enum {
@@ -62,7 +69,15 @@ struct UiState {
     HWND list = nullptr;
     HWND summary = nullptr;
     HWND cli_hint = nullptr;
+    HWND watcher_toggle = nullptr;
     std::wstring skin_dir;  // 当前编辑框内容
+
+    // watcher（D22）状态：默认关闭，只有用户显式开启后才有线程/句柄
+    bool watcher_on = false;
+    HANDLE dir_handle = nullptr;
+    HANDLE stop_ev = nullptr;
+    HANDLE worker = nullptr;
+    core::Debouncer* deb = nullptr;
 };
 
 // narrow(UTF-8)->wide。失败退化空串（表内 ASCII 恒成功；display 是 UTF-8）。
@@ -181,6 +196,117 @@ void do_reset(UiState* st) {
     set_banner(st, apply::outcome_reset(rz.restored, rz.failed, spi.performed && spi.called_ok));
 }
 
+// ---------------- watcher（D22；§7.5）：默认关闭，开启后才起后台线程 ----------------
+
+void set_hint(UiState* st, const std::wstring& s) {
+    if (st->cli_hint) SetWindowTextW(st->cli_hint, s.c_str());
+}
+
+// 后台线程：阻塞式 ReadDirectoryChangesW（overlapped + stop 事件可唤醒），只认原子替换后的最终名
+// （D11 用 *.tmp 临时名，忽略之），有相关事件就 PostMessage 回 UI 线程去走去抖。
+DWORD WINAPI WatcherWorker(LPVOID param) {
+    UiState* st = static_cast<UiState*>(param);
+    for (;;) {
+        BYTE buf[4096];
+        DWORD bytes = 0;
+        OVERLAPPED ov;
+        ZeroMemory(&ov, sizeof(ov));
+        ov.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (ov.hEvent == nullptr) return 0;
+        const DWORD filter = FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME |
+                             FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_SIZE |
+                             FILE_NOTIFY_CHANGE_CREATION;
+        const BOOL ok = ReadDirectoryChangesW(st->dir_handle, buf, sizeof(buf), FALSE, filter, &bytes,
+                                              &ov, nullptr);
+        if (!ok) {  // 目录可能已被删/句柄失效
+            CloseHandle(ov.hEvent);
+            PostMessageW(st->hwnd, WM_APP_WATCHER_DIED, 0, 0);
+            return 0;
+        }
+        HANDLE handles[2] = {ov.hEvent, st->stop_ev};
+        const DWORD w = WaitForMultipleObjects(2, handles, FALSE, INFINITE);
+        if (w != WAIT_OBJECT_0) {  // 收到停止
+            CancelIoEx(st->dir_handle, &ov);
+            DWORD dummy = 0;
+            GetOverlappedResult(st->dir_handle, &ov, &dummy, TRUE);
+            CloseHandle(ov.hEvent);
+            return 0;
+        }
+        if (!GetOverlappedResult(st->dir_handle, &ov, &bytes, FALSE)) {
+            const DWORD e = GetLastError();
+            CloseHandle(ov.hEvent);
+            if (e == ERROR_NOTIFY_ENUM_DIR) {  // 溢出：保守起见当作「有变更」重扫一次
+                PostMessageW(st->hwnd, WM_APP_WATCHER_EVENT, 0, 0);
+            }
+            continue;
+        }
+        CloseHandle(ov.hEvent);
+        bool relevant = false;
+        BYTE* base = buf;
+        for (;;) {
+            FILE_NOTIFY_INFORMATION* fn = reinterpret_cast<FILE_NOTIFY_INFORMATION*>(base);
+            const std::wstring name(fn->FileName, fn->FileNameLength / sizeof(WCHAR));
+            const bool is_tmp = name.size() >= 4 &&
+                                _wcsicmp(name.c_str() + name.size() - 4, L".tmp") == 0;
+            if (!is_tmp) { relevant = true; break; }  // 只认最终名（原子替换后）
+            if (fn->NextEntryOffset == 0) break;
+            base += fn->NextEntryOffset;
+        }
+        if (relevant) PostMessageW(st->hwnd, WM_APP_WATCHER_EVENT, 0, 0);
+    }
+}
+
+void stop_watcher(UiState* st);
+
+void start_watcher(UiState* st) {
+    if (st->watcher_on) return;
+    if (st->skin_dir.empty()) { set_hint(st, L"自动生效：请先选皮肤目录"); return; }
+    st->dir_handle = CreateFileW(st->skin_dir.c_str(), FILE_LIST_DIRECTORY,
+                                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                 OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED,
+                                 nullptr);
+    if (st->dir_handle == INVALID_HANDLE_VALUE) {
+        st->dir_handle = nullptr;
+        set_hint(st, L"自动生效：无法打开皮肤目录");
+        return;
+    }
+    core::Settings s;
+    std::string serr;
+    apply::load_settings(apply::exe_dir() + L"\\config\\settings.ini", s, serr);  // 读不到=用默认
+    const uint64_t debounce = s.has_debounce_ms ? s.debounce_ms : 300;
+    const uint64_t max_wait = s.has_max_wait_ms ? s.max_wait_ms : 1000;
+    st->deb = new core::Debouncer(debounce, max_wait);
+    st->stop_ev = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    st->worker = CreateThread(nullptr, 0, WatcherWorker, st, 0, nullptr);
+    if (st->worker == nullptr) {
+        stop_watcher(st);  // 起线程失败 → 干净回收（内部会关掉已建的句柄）
+        set_hint(st, L"自动生效：无法启动监听线程");
+        return;
+    }
+    st->watcher_on = true;
+    if (st->watcher_toggle) SetWindowTextW(st->watcher_toggle, L"停止自动");
+    set_hint(st, L"自动生效已开：改图后约 " + std::to_wstring(debounce) +
+                 L"ms 内自动重应用（会真的切换你的指针）");
+}
+
+void stop_watcher(UiState* st) {
+    if (st->stop_ev) SetEvent(st->stop_ev);
+    if (st->dir_handle) CancelIoEx(st->dir_handle, nullptr);  // 唤醒可能阻塞的读
+    if (st->worker) {
+        WaitForSingleObject(st->worker, 5000);
+        CloseHandle(st->worker);
+        st->worker = nullptr;
+    }
+    if (st->dir_handle) { CloseHandle(st->dir_handle); st->dir_handle = nullptr; }
+    if (st->stop_ev) { CloseHandle(st->stop_ev); st->stop_ev = nullptr; }
+    delete st->deb;
+    st->deb = nullptr;
+    const bool was = st->watcher_on;
+    st->watcher_on = false;
+    if (st->hwnd) KillTimer(st->hwnd, kWatcherTimer);
+    if (was && st->watcher_toggle) SetWindowTextW(st->watcher_toggle, L"自动生效");
+}
+
 HWND mk(HWND parent, const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w,
          int h, int id, HFONT font) {
     HWND e = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, w, h, parent,
@@ -252,6 +378,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
            IDC_RESTORE_BTN, font);
         mk(hwnd, L"BUTTON", L"复位默认", BS_PUSHBUTTON, kMargin + (kBtnW + 8) * 2, y, kBtnW, kBtnH,
            IDC_RESET_BTN, font);
+        p->watcher_toggle = mk(hwnd, L"BUTTON", L"自动生效", BS_PUSHBUTTON,
+                               kMargin + (kBtnW + 8) * 3, y, kBtnW, kBtnH, IDC_WATCHER_TOGGLE, font);
         p->cli_hint = mk(hwnd, L"STATIC", L"", SS_LEFT, kMargin, y + kBtnH + 4,
                          kClientW - 2 * kMargin, kLabelH, IDC_CLI_HINT, font);
 
@@ -302,9 +430,50 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             do_reset(st);
             return 0;
         }
+        case IDC_WATCHER_TOGGLE: {
+            // 开启即等于用户授权「换图后自动改指针」；关闭/选目录变化会干净停线程。
+            if (st->watcher_on) {
+                stop_watcher(st);
+                set_hint(st, L"自动生效已关闭");
+            } else {
+                st->skin_dir = edit_text(st->edit);
+                start_watcher(st);
+            }
+            return 0;
+        }
         default:
             return 0;
         }
+    }
+    case WM_APP_WATCHER_EVENT: {
+        if (!st || !st->watcher_on || st->deb == nullptr) return 0;
+        const uint64_t now = GetTickCount64();
+        st->deb->on_event(now);
+        const uint64_t dl = st->deb->next_deadline();
+        const UINT ms = dl > now ? static_cast<UINT>(dl - now + 1) : 1;
+        SetTimer(hwnd, kWatcherTimer, ms, nullptr);
+        return 0;
+    }
+    case WM_APP_WATCHER_DIED: {
+        if (!st) return 0;
+        if (st->watcher_on) { stop_watcher(st); set_hint(st, L"自动生效：目录失效，已停止"); }
+        return 0;
+    }
+    case WM_TIMER: {
+        if (wp != kWatcherTimer || !st || !st->watcher_on || st->deb == nullptr) return 0;
+        const uint64_t now = GetTickCount64();
+        if (st->deb->due(now)) {
+            st->deb->fire(now);
+            do_apply(st);   // 复用与手动「应用皮肤」完全同一条管线（含坏图中止、原子替换、L1）
+            if (st->deb->pending()) {   // 仍有余波（风暴）→ 续一个定时器，避免饿死/漏放
+                const uint64_t dl = st->deb->next_deadline();
+                SetTimer(hwnd, kWatcherTimer, dl > now ? static_cast<UINT>(dl - now + 1) : 1, nullptr);
+            }
+        } else {
+            const uint64_t dl = st->deb->next_deadline();
+            SetTimer(hwnd, kWatcherTimer, dl > now ? static_cast<UINT>(dl - now + 1) : 1, nullptr);
+        }
+        return 0;
     }
     case WM_CTLCOLORSTATIC: {
         // 让 STATIC 文字随窗口背景（不画成黑底）。
@@ -313,6 +482,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return reinterpret_cast<LRESULT>(bg);
     }
     case WM_DESTROY:
+        if (st && st->watcher_on) stop_watcher(st);   // 关窗前干净回收线程/句柄，不 leak
         PostQuitMessage(0);
         return 0;
     default:
