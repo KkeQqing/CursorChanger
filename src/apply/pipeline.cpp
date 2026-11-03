@@ -1,6 +1,7 @@
 #include "apply/pipeline.h"
 
 #include "apply/spi.h"
+#include "core/ani_format.h"
 #include "core/claim.h"
 #include "core/cur_writer.h"
 #include "core/png_source.h"
@@ -109,22 +110,29 @@ ExtKind ext_kind(const std::wstring& name) {
 // 把一个已认领的源文件变成 .cur 字节：.cur 透传；png/svg 走通道解码 -> CursorSpec -> CurWriter
 // 单点封装。任何一步失败都必须返回带**观测事实**的错误串，绝不产出「看起来对」的半坏文件（§4）。
 bool build_source_bytes(const std::wstring& source, core::SlotId slot, std::vector<uint8_t>& bytes,
-                        std::string& error) {
+                        std::string& error, std::wstring& ext_out) {
+    ext_out = L".cur";
     std::vector<uint8_t> raw;
     if (!read_file(source, raw)) {
         error = "cannot read source file";
         return false;
     }
     const ExtKind kind = ext_kind(source);
-    if (kind == ExtKind::Cur || kind == ExtKind::Ani) {
-        // passthrough：原样搬运、绝不重编码（D5；.ani 见 D21a）。
-        // .ani 合法性不在这里判容器结构（格式语义未吃透，硬解析会假绿）——交给 L1 的
-        // LoadCursorFromFileW 这条**独立** oracle（§4.4.1）；坏 .ani 会在 L1 变红并挡在写册前。
+    if (kind == ExtKind::Cur) {
+        // passthrough：原样搬运、绝不重编码（D5）。
         bytes = std::move(raw);
+        ext_out = L".cur";
+        return true;
+    }
+    if (kind == ExtKind::Ani) {
+        // D21a 透传。合法性交给 L1 的 LoadCursorFromFileW（独立 oracle，§4.4.1）；坏 .ani 在 L1
+        // 变红并挡在写册前。不在这里判容器结构（硬解析半懂格式会假绿）。
+        bytes = std::move(raw);
+        ext_out = L".ani";
         return true;
     }
 
-    // 读取同名 sidecar `<stem>.meta`（§5.3）：只承载参数（size/hotspot/trim），不承载身份。
+    // 读取同名 sidecar `<stem>.meta`（§5.3）：只承载参数（size/hotspot/trim/frames/rate）。
     // 解析失败或未知 key ⇒ 该槽带原因失败（挡在写注册表前）；无 .meta 时走默认，行为不变。
     core::Sidecar sc;
     {
@@ -144,6 +152,70 @@ bool build_source_bytes(const std::wstring& source, core::SlotId slot, std::vect
         }
     }
 
+    // ---- D21b 动画合成：sidecar 有 frames= => 逐帧解码成单 .cur，封装 RIFF/ACON 的 .ani ----
+    if (sc.has_frames) {
+        if (kind != ExtKind::Png && kind != ExtKind::Svg) {
+            error = "frames= only valid on a png/svg slot";
+            return false;
+        }
+        const std::wstring::size_type sep = source.find_last_of(L"\\/");
+        const std::wstring dir =
+            (sep == std::wstring::npos) ? std::wstring(L".") : source.substr(0, sep);
+        core::AniSpec ani;
+        for (const std::string& name : sc.frames) {
+            std::wstring wname;
+            for (char c : name) wname.push_back(static_cast<wchar_t>(static_cast<unsigned char>(c)));
+            const std::wstring fp = dir + L"\\" + wname;
+            std::vector<uint8_t> fraw;
+            if (!read_file(fp, fraw)) { error = "cannot read frame file: " + name; return false; }
+            const ExtKind fkind = ext_kind(fp);
+            core::CursorSpec fs;
+            std::string fdet;
+            if (fkind == ExtKind::Png) {
+                core::PngOptions po;
+                if (sc.has_size) po.sizes = sc.sizes;
+                if (sc.has_hotspot) { po.has_hotspot_override = true; po.hotspot_at_source = sc.hotspot; }
+                if (core::load_png_to_spec(fraw.data(), fraw.size(), slot, po, fs, fdet) !=
+                    core::PngStatus::Ok) {
+                    error = "frame decode refused (" + name + "): " + fdet;
+                    return false;
+                }
+            } else if (fkind == ExtKind::Svg) {
+                core::SvgOptions so;
+                if (sc.has_size) so.sizes = sc.sizes;
+                if (sc.has_hotspot) { so.has_hotspot_override = true; so.hotspot_at_source = sc.hotspot; }
+                if (sc.has_trim) so.trim_transparent = (sc.trim == "auto");
+                core::SvgReport rep;
+                if (core::load_svg_to_spec(fraw.data(), fraw.size(), slot, so, fs, rep, fdet) !=
+                    core::SvgStatus::Ok) {
+                    error = "frame raster refused (" + name + ")";
+                    return false;
+                }
+            } else {
+                error = "animation frame must be png/svg: " + name;
+                return false;
+            }
+            std::vector<uint8_t> fcur;
+            if (core::write_cursor_bytes(fs, fcur).status != core::WriteStatus::Ok) {
+                error = "frame cur rejected (" + name + ")";
+                return false;
+            }
+            ani.frames.push_back(std::move(fcur));
+        }
+        // §10 ani.default_rate_jiffies=6（jiffies，1/60s）；sidecar 给了非 0 才覆盖。
+        ani.rate_jiffies = (sc.has_rate && sc.rate != 0) ? sc.rate : 6;
+        std::vector<uint8_t> ab;
+        if (core::write_ani_bytes(ani, ab).status != core::AniWriteStatus::Ok) {
+            error = "ani writer rejected";
+            bytes.clear();
+            return false;
+        }
+        bytes = std::move(ab);
+        ext_out = L".ani";
+        return true;
+    }
+
+    // ---- 常规静态通道：png/svg -> CursorSpec -> CurWriter -> .cur ----
     core::CursorSpec spec;
     std::string detail;
     if (kind == ExtKind::Png) {
@@ -271,16 +343,16 @@ PipelineResult build_only(const PipelineOptions& opt) {
         std::vector<uint8_t> bytes;
         ProducedFile p;
         p.registry_name = c.registry_name;
-        // 输出扩展名跟随源类型：.ani 槽产出 .ani（scheme 值本就应指向动画容器），其余仍 .cur。
-        const wchar_t* out_ext = (ext_kind(c.source) == ExtKind::Ani) ? L".ani" : L".cur";
-        p.path = applied_abs + L"\\" + c.registry_name + out_ext;
         std::string cerr;
-        if (!build_source_bytes(c.source, c.slot, bytes, cerr)) {
+        std::wstring ext_out;
+        if (!build_source_bytes(c.source, c.slot, bytes, cerr, ext_out)) {
             p.l1_ok = false;
             p.l1_detail = cerr;
             r.produced.push_back(p);
             continue;
         }
+        // 输出扩展名由 build_source_bytes 决定：png/svg→.cur；.ani 透传 与 frames= 合成→.ani。
+        p.path = applied_abs + L"\\" + c.registry_name + ext_out;
         std::string err;
         if (!publish_file(bytes, p.path, err)) {
             p.l1_ok = false;

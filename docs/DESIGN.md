@@ -241,8 +241,10 @@ RIFF [size] "ACON"
 > **实现状态（V0.7）**：**4.4.1 透传已落地** —— `pipeline` 识别 `.ani` 扩展名、原样搬运不重编码、
 > 产出 `<槽名>.ani`、L1 以系统 `LoadCursorFromFileW` 作**独立 oracle**；坏 `.ani` 挡在写注册表前
 > （测试 `tests_m10` 正/负各一，含"字节未被改写"与"`.ani` 输出名"两条守卫）。
-> **4.4.2 合成 deferred**：per-frame rate 落点与 `iCurCount/iIconCount` 引用语义**尚未吃透**，
-> 且「真的会动画」只能真机 L3 判（U7/U22）——不在吃透格式前硬产一个 OS 可能不播的容器。
+> **4.4.2 合成已落地（V0.7，commit M12）**：`core/ani_format` 合成 RIFF/ACON（`iDispRate`=jiffies、
+> 每帧=完整 `.cur`、`bfAttributes=1`），`sidecar frames=/rate=` 经 `build_only` 接通（`tests_m12` 端到端
+> 用 `LoadCursorFromFileW` 证 OS **接受我们自造的 .ani** + reader 反解 nFrames/rate）。
+> **仍待真机（U22）**：OS 是否**按我们的 `iDispRate` 播放动画** —— 加载接受 ≠ 会转，只有人眼能定，未验。
 
 ---
 

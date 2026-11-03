@@ -4,8 +4,8 @@
 // 契约：未知 key → 报错（不静默忽略）；值类型/范围不对 → 报错。§5.3「只允许承载参数，
 // 不允许承载身份」——身份仍只由文件名 stem 决定，这里绝不读槽位名。
 //
-// 当前支持 hotspot / size / trim。动画键 frames / rate 属 D21b，随 .ani writer 一起加，
-// 现在出现会按「未知 key」拒掉，绝不假装已支持。
+// 支持 hotspot / size / trim（静态通道）与 frames / rate（D21b 动画合成）。
+// frames= 出现即令调用方走 .ani 合成；rate= 为每帧 jiffies（1/60 秒），非毫秒。
 #pragma once
 
 #include "core/ir.h"
@@ -33,6 +33,12 @@ struct Sidecar {
 
     bool has_trim{false};
     std::string trim;                  // 仅 SVG：none | auto
+
+    // 动画合成（D21b）：出现非空 frames= 即改走 .ani 合成路径，主文件仅用于定槽位。
+    bool has_frames{false};
+    std::vector<std::string> frames;   // 帧文件（相对 sidecar 同目录），按顺序 = 动画帧序
+    bool has_rate{false};
+    uint32_t rate{0};                  // 每帧 jiffies（1/60s）；0 视为未给，由调用方用默认
 };
 
 struct SidecarParse {

@@ -6,6 +6,7 @@
 #include "cases.h"
 #include "testfs.h"
 
+#include "apply/pipeline.h"
 #include "core/ani_format.h"
 #include "core/cur_reader.h"
 #include "core/cur_writer.h"
@@ -44,6 +45,10 @@ std::vector<uint8_t> to_cur(const CursorSpec& s) {
     std::vector<uint8_t> b;
     if (write_cursor_bytes(s, b).status != WriteStatus::Ok) b.clear();
     return b;
+}
+
+bool mkdir_p(const std::wstring& d) {
+    return CreateDirectoryW(d.c_str(), nullptr) != 0 || GetLastError() == ERROR_ALREADY_EXISTS;
 }
 
 }  // namespace
@@ -109,6 +114,63 @@ void register_ani_writer_cases(Runner& runner) {
         over.frames = {{1, 2}, {3, 4}, {5, 6}};   // 3 > 2
         CHECK(write_ani_bytes(over, out).status == AniWriteStatus::TooManyFrames);
         CHECK(out.empty());                         // 越界报错、不截断、不留半坏文件（H9）
+    });
+
+    // 端到端：sidecar frames= 经 build_only 真的合成出 .ani、被 OS 加载、反解 nFrames=2。
+    runner.add("ani_frames_sidecar_synthesizes_via_pipeline", [](Runner& runner) {
+        const std::wstring dir = L"build\\m12_synth";
+        mkdir_p(dir);
+        std::vector<uint8_t> f0, f1, prim;
+        if (!cs::test::read_whole_file(L"tests\\fixtures\\semi_grey_32x32.png", f0) ||
+            !cs::test::read_whole_file(L"tests\\fixtures\\opaque_white_8x8.png", f1)) {
+            CHECK(false);
+            return;
+        }
+        prim = f0;
+        CHECK(cs::test::write_whole_file(dir + L"\\wait.png", prim));    // 仅用于定槽位（内容走 frames）
+        CHECK(cs::test::write_whole_file(dir + L"\\w0.png", f0));
+        CHECK(cs::test::write_whole_file(dir + L"\\w1.png", f1));
+        const std::string meta = "frames = w0.png,w1.png\nrate = 5\n";
+        CHECK(cs::test::write_whole_file(dir + L"\\wait.meta",
+                                         std::vector<uint8_t>(meta.begin(), meta.end())));
+
+        const cs::apply::PipelineOptions opt = cs::apply::make_live_opts(dir, /*do_spi=*/false);
+        const cs::apply::PipelineResult r = cs::apply::build_only(opt);
+        CHECK(!r.aborted_before_registry);
+        CHECK(r.produced.size() == 1u);
+        if (r.produced.size() != 1u) return;
+        CHECK(r.produced.front().l1_ok);                                   // OS 加载接受合成 .ani
+        CHECK(r.produced.front().path.size() >= 4 &&
+              r.produced.front().path.compare(r.produced.front().path.size() - 4, 4, L".ani") == 0);
+        std::vector<uint8_t> ani;
+        CHECK(cs::test::read_whole_file(r.produced.front().path, ani));
+        AniInfo info;
+        CHECK(read_ani_info(ani.data(), ani.size(), info) == AniReadStatus::Ok);
+        CHECK(info.n_frames == 2);
+        CHECK(info.rate_jiffies == 5);                                     // sidecar rate 生效
+    });
+
+    // 端到端负：frames= 引用不存在的帧文件 => 该槽失败、挡在写注册表前。
+    runner.add("ani_frames_missing_file_blocks_before_registry", [](Runner& runner) {
+        const std::wstring dir = L"build\\m12_synth_bad";
+        mkdir_p(dir);
+        std::vector<uint8_t> prim;
+        if (!cs::test::read_whole_file(L"tests\\fixtures\\semi_grey_32x32.png", prim)) {
+            CHECK(false);
+            return;
+        }
+        CHECK(cs::test::write_whole_file(dir + L"\\wait.png", prim));
+        const std::string meta = "frames = nope.png\n";
+        CHECK(cs::test::write_whole_file(dir + L"\\wait.meta",
+                                         std::vector<uint8_t>(meta.begin(), meta.end())));
+        const cs::apply::PipelineOptions opt = cs::apply::make_live_opts(dir, /*do_spi=*/false);
+        const cs::apply::PipelineResult r = cs::apply::build_only(opt);
+        CHECK(r.aborted_before_registry);
+        CHECK(!r.produced.empty());
+        if (!r.produced.empty()) {
+            CHECK(!r.produced.front().l1_ok);
+            CHECK(r.produced.front().l1_detail.find("cannot read frame file") != std::string::npos);
+        }
     });
 }
 

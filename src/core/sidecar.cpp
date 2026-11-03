@@ -103,6 +103,48 @@ SidecarParse parse_sidecar(const std::string& text, Sidecar& out) {
             }
             out.trim = t;
             out.has_trim = true;
+        } else if (key == "frames") {
+            // 逗号分隔的帧文件名（相对 sidecar 同目录）；不许含路径分隔符（防越界）；空段非法。
+            std::vector<std::string> list;
+            std::string cur;
+            bool bad = false;
+            for (std::size_t i = 0; i <= val.size(); ++i) {
+                if (i == val.size() || val[i] == ',') {
+                    std::string tok = strip(cur);
+                    cur.clear();
+                    if (tok.empty()) { bad = true; break; }
+                    if (tok.find('\\') != std::string::npos || tok.find('/') != std::string::npos) {
+                        bad = true; break;
+                    }
+                    list.push_back(tok);
+                } else {
+                    cur.push_back(val[i]);
+                }
+            }
+            if (bad || list.empty()) {
+                r.status = SidecarStatus::BadValue;
+                r.detail = "frames must be comma-separated relative filenames: " + val;
+                return r;
+            }
+            out.frames = list;
+            out.has_frames = true;
+        } else if (key == "rate") {
+            if (val.empty()) {
+                r.status = SidecarStatus::BadValue;
+                r.detail = "rate needs a non-negative integer (jiffies)";
+                return r;
+            }
+            unsigned long n = 0;
+            for (char c : val) {
+                if (std::isdigit(static_cast<unsigned char>(c)) == 0) {
+                    r.status = SidecarStatus::BadValue;
+                    r.detail = "rate must be digits (jiffies): " + val;
+                    return r;
+                }
+                n = n * 10u + static_cast<unsigned>(c - '0');
+            }
+            out.rate = static_cast<uint32_t>(n);
+            out.has_rate = true;
         } else {
             r.status = SidecarStatus::UnknownKey;
             r.detail = "unknown key: " + key;

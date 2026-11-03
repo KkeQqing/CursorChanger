@@ -59,6 +59,12 @@ void register_sidecar_cases(Runner& runner) {
         CHECK(sc.has_size && sc.sizes == exp_sizes);
         CHECK(sc.has_hotspot && sc.hotspot.x == 8 && sc.hotspot.y == 8);
         CHECK(sc.has_trim && sc.trim == "auto");
+        // 动画键：frames 逐个入表、rate 解析为 jiffies
+        Sidecar an;
+        const SidecarParse ar = parse_sidecar("frames = f0.png, f1.png, f2.png\nrate = 8\n", an);
+        CHECK(ar.status == SidecarStatus::Ok);
+        CHECK(an.has_frames && an.frames.size() == 3 && an.frames[0] == "f0.png" && an.frames[2] == "f2.png");
+        CHECK(an.has_rate && an.rate == 8);
     });
 
     // ---- 纯解析：负（未知 key / 坏值 / 空）----
@@ -67,9 +73,10 @@ void register_sidecar_cases(Runner& runner) {
         const SidecarParse r = parse_sidecar("color = red\n", sc);
         CHECK(r.status == SidecarStatus::UnknownKey);
         CHECK(r.detail.find("color") != std::string::npos);
-        // frames/rate 属 D21b，尚未定义 → 现在必须被当未知 key 拒，不得假装支持动画
-        const SidecarParse r2 = parse_sidecar("frames = a.png,b.png\n", sc);
-        CHECK(r2.status == SidecarStatus::UnknownKey);
+        // 帧路径越界必须拒（防 ../ 或绝对路径）
+        CHECK(parse_sidecar("frames = ..\\evil.png\n", sc).status == SidecarStatus::BadValue);
+        // rate 非数字拒
+        CHECK(parse_sidecar("rate = fast\n", sc).status == SidecarStatus::BadValue);
     });
 
     runner.add("sidecar_rejects_bad_values", [](Runner& runner) {
@@ -137,7 +144,7 @@ void register_sidecar_cases(Runner& runner) {
             return;
         }
         CHECK(cs::test::write_whole_file(dir + L"\\arrow.png", png));
-        CHECK(put_text(dir + L"\\arrow.meta", "frames = a.png,b.png\n"));   // D21b 未落地 → 未知 key
+        CHECK(put_text(dir + L"\\arrow.meta", "bogus = 1\n"));   // 真未知 key
 
         const PipelineOptions opt = cs::apply::make_live_opts(dir, /*do_spi=*/false);
         const PipelineResult r = cs::apply::build_only(opt);
