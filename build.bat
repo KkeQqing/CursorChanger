@@ -70,7 +70,7 @@ CL %FLAGS% /Fo%OUTDIR%\ src\core\cli.cpp src\core\ir.cpp src\core\slots.cpp ^
     src\apply\report_model.cpp ^
     src\tests\tests_main.cpp src\tests\tests_tables.cpp src\tests\tests_cur.cpp ^
     src\tests\tests_l1_probe.cpp src\tests\tests_registry_probe.cpp src\tests\tests_m2.cpp ^
-     src\tests\tests_m3.cpp src\tests\tests_m4.cpp src\tests\tests_m5.cpp src\tests\tests_m6.cpp src\tests\tests_m7.cpp src\tests\tests_m8.cpp src\tests\emit_skin.cpp ^
+     src\tests\tests_m3.cpp src\tests\tests_m4.cpp src\tests\tests_m5.cpp src\tests\tests_m6.cpp src\tests\tests_m7.cpp src\tests\tests_m8.cpp src\tests\tests_m10.cpp src\tests\emit_skin.cpp ^
    /Fe%OUTDIR%\%TESTS% /link user32.lib gdi32.lib advapi32.lib /SUBSYSTEM:CONSOLE > "%OUTDIR%\compile-tests.log" 2>&1
 IF ERRORLEVEL 1 GOTO :L_FAIL_COMPILE
 

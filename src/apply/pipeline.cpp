@@ -86,6 +86,7 @@ struct Claimed {
 enum class ExtKind : uint8_t { Cur,
                                Png,
                                Svg,
+                               Ani,
                                Other };
 
 ExtKind ext_kind(const std::wstring& name) {
@@ -100,6 +101,7 @@ ExtKind ext_kind(const std::wstring& name) {
     if (e == "cur") return ExtKind::Cur;
     if (e == "png") return ExtKind::Png;
     if (e == "svg") return ExtKind::Svg;
+    if (e == "ani") return ExtKind::Ani;
     return ExtKind::Other;
 }
 
@@ -113,8 +115,11 @@ bool build_source_bytes(const std::wstring& source, core::SlotId slot, std::vect
         return false;
     }
     const ExtKind kind = ext_kind(source);
-    if (kind == ExtKind::Cur) {
-        bytes = std::move(raw);   // passthrough：不重编码（§1 目标 1，D7 不产 PNG 条目）
+    if (kind == ExtKind::Cur || kind == ExtKind::Ani) {
+        // passthrough：原样搬运、绝不重编码（D5；.ani 见 D21a）。
+        // .ani 合法性不在这里判容器结构（格式语义未吃透，硬解析会假绿）——交给 L1 的
+        // LoadCursorFromFileW 这条**独立** oracle（§4.4.1）；坏 .ani 会在 L1 变红并挡在写册前。
+        bytes = std::move(raw);
         return true;
     }
 
@@ -159,8 +164,8 @@ bool build_source_bytes(const std::wstring& source, core::SlotId slot, std::vect
 
 uint32_t count_source_files(const std::wstring& dir, std::vector<std::wstring>& names_out) {
     names_out.clear();
-    // 三条通道一并扫描（§1 目标）。Windows 的通配匹配大小写不敏感，ext_kind 再统一小写。
-    for (const wchar_t* pat : {L"\\*.cur", L"\\*.png", L"\\*.svg"}) {
+    // 四条通道一并扫描（§1 目标 + D21a）；通配大小写不敏感，ext_kind 再统一小写。
+    for (const wchar_t* pat : {L"\\*.cur", L"\\*.png", L"\\*.svg", L"\\*.ani"}) {
         const std::wstring pattern = dir + pat;
         WIN32_FIND_DATAW fd{};
         HANDLE h = FindFirstFileW(pattern.c_str(), &fd);
@@ -180,7 +185,7 @@ PipelineResult build_only(const PipelineOptions& opt) {
     r.scanned = count_source_files(opt.skin_dir, names);
     if (r.scanned == 0) {
         r.aborted_before_registry = true;
-        r.abort_reason = "no .cur/.png/.svg files in skin dir";
+        r.abort_reason = "no .cur/.png/.svg/.ani files in skin dir";
         return r;
     }
 
@@ -240,7 +245,9 @@ PipelineResult build_only(const PipelineOptions& opt) {
         std::vector<uint8_t> bytes;
         ProducedFile p;
         p.registry_name = c.registry_name;
-        p.path = applied_abs + L"\\" + c.registry_name + L".cur";
+        // 输出扩展名跟随源类型：.ani 槽产出 .ani（scheme 值本就应指向动画容器），其余仍 .cur。
+        const wchar_t* out_ext = (ext_kind(c.source) == ExtKind::Ani) ? L".ani" : L".cur";
+        p.path = applied_abs + L"\\" + c.registry_name + out_ext;
         std::string cerr;
         if (!build_source_bytes(c.source, c.slot, bytes, cerr)) {
             p.l1_ok = false;

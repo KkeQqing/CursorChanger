@@ -222,6 +222,8 @@ int main(int argc, char** argv) {
     cs::test::register_real_skin_cases(runner);
     // M8：构建产物子系统守卫（D18 改判的可执行钉子：app GUI / tests CUI）
     cs::test::register_build_image_cases(runner);
+    // M10：D21a .ani 透传（OS 加载器为独立 oracle；坏 .ani 不写册）
+    cs::test::register_ani_cases(runner);
 
     if (force_fail) {
         std::printf("[MODE] force-fail: injecting a case that must fail\n");

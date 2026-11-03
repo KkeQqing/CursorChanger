@@ -53,4 +53,7 @@ void register_real_skin_cases(Runner& runner);
 // tests_m8.cpp：构建产物子系统守卫（D18 V0.6.2：app=WINDOWS GUI / tests=CONSOLE CUI 的非对称）
 void register_build_image_cases(Runner& runner);
 
+// tests_m10.cpp：D21a `.ani` 透传通道（以 OS 加载器为独立 oracle；坏 .ani 挡在写册前）
+void register_ani_cases(Runner& runner);
+
 }  // namespace cs::test
