@@ -208,6 +208,103 @@ void confirm_texts_distinct_for_two_restores(Runner& runner) {
     CHECK(rs.body != zs.body);                 // 正文必须不同（兜底 vs 快照）
 }
 
+// ---- 方案2：逐槽 kind 分类 + 动作结果横幅（把「成没成 / 为什么」摆进可单测的数据层）----
+
+ProducedFile mk_produced_detail(const wchar_t* reg, const wchar_t* path, bool l1,
+                                const std::string& detail) {
+    ProducedFile p = mk_produced(reg, path, l1);
+    p.l1_detail = detail;
+    return p;
+}
+
+bool wcontains(const std::wstring& hay, const wchar_t* needle) {
+    return hay.find(needle) != std::wstring::npos;
+}
+
+// 四种行状态必须各归各位：可用 / 源无效(解码类) / 加载器拒绝 / 缺。
+void report_kind_classifies_each_outcome(Runner& runner) {
+    PipelineResult r;
+    r.produced.push_back(mk_produced_detail(L"Arrow", L"a", true, "ok"));
+    r.produced.push_back(mk_produced_detail(L"Wait", L"w", false,
+                                            "png decode refused (status=2): content is JPEG, not a PNG"));
+    r.produced.push_back(mk_produced_detail(L"Hand", L"h", false, "loader rejected (win_error=0)"));
+
+    RowKind arrow_k = RowKind::Missing, wait_k = RowKind::Missing, hand_k = RowKind::Missing,
+            ibeam_k = RowKind::Applied;
+    for (const SlotRow& row : make_report(r).rows) {
+        if (row.slot == SlotId::Arrow) arrow_k = row.kind;
+        if (row.slot == SlotId::Wait) wait_k = row.kind;
+        if (row.slot == SlotId::Hand) hand_k = row.kind;
+        if (row.slot == SlotId::IBeam) ibeam_k = row.kind;
+    }
+    CHECK(arrow_k == RowKind::Applied);        // covered && l1_ok
+    CHECK(wait_k == RowKind::BadSource);       // 解码类失败 → 源文件无效，不是加载器拒绝
+    CHECK(hand_k == RowKind::LoaderRejected);  // 只有 loader rejected 才归此类
+    CHECK(ibeam_k == RowKind::Missing);        // 没产出 → 缺
+}
+
+// 应用中止（坏图挡在写册前）横幅必须明说「系统指针未改动」并带原因；成功横幅必须报已应用数。
+void outcome_apply_distinguishes_aborted_and_success(Runner& runner) {
+    {   // 中止态：写册前就退，指针没动
+        PipelineResult r;
+        r.aborted_before_registry = true;
+        r.abort_reason = "L1 rejected Wait: png decode refused";
+        r.produced.push_back(mk_produced_detail(L"Wait", L"w", false, "png decode refused"));
+        const Outcome o = outcome_apply(r);
+        CHECK(o.level == OutcomeLevel::Err);
+        CHECK(wcontains(o.banner, L"系统指针未改动"));   // 关键：不能让用户以为生效了
+        CHECK(wcontains(o.banner, L"应用失败"));
+        CHECK(wcontains(o.banner, L"png decode refused")); // 原因要透出来
+        CHECK(!wcontains(o.banner, L"已应用"));           // 取反方向：中止绝不能报「已应用」
+    }
+    {   // 成功态：写入>0、无失败、SPI 生效
+        PipelineResult r;
+        r.registry_written = 15;
+        r.registry_failed = 0;
+        r.spi.performed = true;
+        r.spi.called_ok = true;
+        const Outcome o = outcome_apply(r);
+        CHECK(o.level == OutcomeLevel::Ok);
+        CHECK(wcontains(o.banner, L"已应用"));
+        CHECK(wcontains(o.banner, L"指针已切换"));
+        CHECK(wcontains(o.banner, L"15"));
+    }
+}
+
+// 预览永远不改指针，且坏文件要给出 Warn + 「不合格」计数（与 apply 的成功/失败明确区分）。
+void outcome_preview_flags_bad_files_as_non_applying(Runner& runner) {
+    PipelineResult r;
+    r.scanned = 2;
+    r.produced.push_back(mk_produced_detail(L"Arrow", L"a", true, "ok"));
+    r.produced.push_back(mk_produced_detail(L"Wait", L"w", false, "content is JPEG, not a PNG"));
+    const Outcome o = outcome_preview(r);
+    CHECK(o.level == OutcomeLevel::Warn);
+    CHECK(wcontains(o.banner, L"预览"));
+    CHECK(wcontains(o.banner, L"不合格"));
+    CHECK(wcontains(o.banner, L"不改动系统指针"));
+}
+
+// 还原/复位按数字定级：无基线=Err 并指回「复位默认」；全成=Ok；有失败=Warn。
+void outcome_restore_and_reset_levels(Runner& runner) {
+    const Outcome ok = outcome_restore(17, 0, 0, /*loaded=*/true, /*spi_ok=*/true);
+    CHECK(ok.level == OutcomeLevel::Ok);
+    CHECK(wcontains(ok.banner, L"已还原"));
+
+    const Outcome noload = outcome_restore(0, 0, 0, /*loaded=*/false, /*spi_ok=*/false);
+    CHECK(noload.level == OutcomeLevel::Err);
+    CHECK(wcontains(noload.banner, L"基线"));
+
+    const Outcome partial = outcome_restore(10, 3, 0, /*loaded=*/true, /*spi_ok=*/true);
+    CHECK(partial.level == OutcomeLevel::Warn);
+
+    const Outcome rz = outcome_reset(15, 0, /*spi_ok=*/true);
+    CHECK(rz.level == OutcomeLevel::Ok);
+    CHECK(wcontains(rz.banner, L"已复位"));
+
+    const Outcome rzb = outcome_reset(12, 2, /*spi_ok=*/true);
+    CHECK(rzb.level == OutcomeLevel::Warn);
+}
+
 }  // namespace
 
 namespace cs::test {
@@ -223,6 +320,13 @@ void register_ui_cases(Runner& runner) {
     runner.add("apply_without_dir_is_missing_operand", &apply_without_dir_is_missing_operand);
     runner.add("live_opts_layout_is_the_shared_source", &live_opts_layout_is_the_shared_source);
     runner.add("confirm_texts_distinct_for_two_restores", &confirm_texts_distinct_for_two_restores);
+    // 方案2：逐槽 kind 分类 + 成败横幅（把「成没成/为什么」钉进数据层）
+    runner.add("report_kind_classifies_each_outcome", &report_kind_classifies_each_outcome);
+    runner.add("outcome_apply_distinguishes_aborted_and_success",
+               &outcome_apply_distinguishes_aborted_and_success);
+    runner.add("outcome_preview_flags_bad_files_as_non_applying",
+               &outcome_preview_flags_bad_files_as_non_applying);
+    runner.add("outcome_restore_and_reset_levels", &outcome_restore_and_reset_levels);
 }
 
 }  // namespace cs::test

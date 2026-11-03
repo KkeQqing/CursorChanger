@@ -246,6 +246,51 @@ void register_png_cases(Runner& runner) {
         // Hand 的规则是 HandTip：4x4 -> (4*3/10, 4/5) = (1, 0)
         CHECK(s.frames[0].hotspot.x == 1 && s.frames[0].hotspot.y == 0);
     });
+
+    runner.add("png_names_the_actual_format_when_mislabeled", [](Runner& runner) {
+        // 本轮的动因：用户把 JPEG 改名成 .png，旧实现只回笼统 "stb decode failed"，GUI 只能显示
+        // 看不懂的内部码。现在必须先嗅魔数、点名真实格式。输入是**手写的各格式魔数字节**（独立于
+        // stb / 独立于被测），期望是 detail 里出现该格式名 —— 不是拿输出当期望。
+        CursorSpec s;
+        std::string detail;
+
+        std::vector<uint8_t> jpeg = {0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00};
+        CHECK(load_png_to_spec(jpeg.data(), jpeg.size(), SlotId::Arrow, sizes163248(), s, detail) ==
+              PngStatus::DecodeFailed);
+        CHECK(detail.find("JPEG") != std::string::npos);
+        CHECK(s.frames.empty());
+
+        std::vector<uint8_t> gif = {'G', 'I', 'F', '8', '9', 'a', 0x01, 0x00};
+        CHECK(load_png_to_spec(gif.data(), gif.size(), SlotId::Arrow, sizes163248(), s, detail) ==
+              PngStatus::DecodeFailed);
+        CHECK(detail.find("GIF") != std::string::npos);
+
+        std::vector<uint8_t> bmp = {'B', 'M', 0x36, 0x00, 0x00, 0x00};
+        CHECK(load_png_to_spec(bmp.data(), bmp.size(), SlotId::Arrow, sizes163248(), s, detail) ==
+              PngStatus::DecodeFailed);
+        CHECK(detail.find("BMP") != std::string::npos);
+
+        // ICO/CUR 容器冒充 png：也应点名（type 字节在偏移 2..3 = 01 或 02）
+        std::vector<uint8_t> ico = {0x00, 0x00, 0x01, 0x00, 0x01, 0x00};
+        CHECK(load_png_to_spec(ico.data(), ico.size(), SlotId::Arrow, sizes163248(), s, detail) ==
+              PngStatus::DecodeFailed);
+        CHECK(detail.find("ICO/CUR") != std::string::npos);
+
+        // 反向对照（防嗅探误杀真图）：真正的 PNG 夹具必须走成功分支、detail 不该被格式名污染。
+        std::vector<uint8_t> png;
+        if (load_fix(L"semi_grey_4x4.png", png)) {
+            CursorSpec ok_spec;
+            std::string ok_detail;
+            PngOptions o;
+            o.sizes = {4};
+            CHECK(load_png_to_spec(png.data(), png.size(), SlotId::Arrow, o, ok_spec, ok_detail) ==
+                  PngStatus::Ok);
+            CHECK(ok_detail.find("JPEG") == std::string::npos);
+            CHECK(ok_detail.find("not a PNG") == std::string::npos);
+        } else {
+            CHECK(false);   // 夹具没了，误杀分支就没被覆盖 —— 显式响，别静默跳过
+        }
+    });
 }
 
 }  // namespace cs::test

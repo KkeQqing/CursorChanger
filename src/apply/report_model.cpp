@@ -2,6 +2,7 @@
 #include "apply/report_model.h"
 
 #include <cstddef>
+#include <string>
 
 namespace cs::apply {
 namespace {
@@ -119,6 +120,7 @@ ReportView make_report(const PipelineResult& r) {
                 row.covered = true;
                 row.l1_ok = p.l1_ok;
                 row.output_path = p.path;
+                row.l1_detail = p.l1_detail;
                 break;
             }
         }
@@ -127,6 +129,17 @@ ReportView make_report(const PipelineResult& r) {
                 row.conflict = true;
                 break;
             }
+        }
+        // kind：covered+l1_ok 才是可用；covered 但失败的，只有「loader rejected」才是加载器拒绝，
+        // 其余（解码/光栅化/writer/落地）都归「源文件不行」，因为 pipeline 就是这么标记 l1_detail 的。
+        if (!row.covered) {
+            row.kind = RowKind::Missing;
+        } else if (row.l1_ok) {
+            row.kind = RowKind::Applied;
+        } else if (row.l1_detail.find("loader rejected") != std::string::npos) {
+            row.kind = RowKind::LoaderRejected;
+        } else {
+            row.kind = RowKind::BadSource;
         }
         v.rows.push_back(row);
     }
@@ -139,6 +152,88 @@ ReportView make_report(const PipelineResult& r) {
     }
 
     return v;
+}
+
+namespace {
+// abort_reason / l1_detail 在本项目里恒为 ASCII（英文原因串），逐字节升宽即可安全显示。
+std::wstring wfrom(const std::string& s) {
+    std::wstring w;
+    w.reserve(s.size());
+    for (unsigned char c : s) w.push_back(static_cast<wchar_t>(c));
+    return w;
+}
+}  // namespace
+
+Outcome outcome_preview(const PipelineResult& r) {
+    std::size_t good = 0, bad = 0;
+    for (const ProducedFile& p : r.produced) {
+        if (p.l1_ok) ++good; else ++bad;
+    }
+    Outcome o;
+    o.banner = L"预览：扫描 " + std::to_wstring(r.scanned) + L" 个文件，合格 " +
+               std::to_wstring(good) + L" 槽";
+    if (bad) o.banner += L"，不合格 " + std::to_wstring(bad) + L" 个";
+    o.banner += L"。（预览不改动系统指针）";
+    o.level = bad ? OutcomeLevel::Warn : OutcomeLevel::Info;
+    return o;
+}
+
+Outcome outcome_apply(const PipelineResult& r) {
+    Outcome o;
+    if (r.aborted_before_registry) {
+        std::size_t bad = 0;
+        for (const ProducedFile& p : r.produced) {
+            if (!p.l1_ok) ++bad;
+        }
+        o.level = OutcomeLevel::Err;
+        o.banner = L"应用失败：0 槽生效，" + std::to_wstring(bad) +
+                   L" 个文件不合格；系统指针未改动。原因：" + wfrom(r.abort_reason);
+        return o;
+    }
+    if (r.registry_written > 0 && r.registry_failed == 0 && r.spi.performed && r.spi.called_ok) {
+        o.level = OutcomeLevel::Ok;
+        o.banner = L"已应用 " + std::to_wstring(r.registry_written) + L" 个槽位，系统指针已切换。";
+        if (!r.conflicts.empty())
+            o.banner += L"（" + std::to_wstring(r.conflicts.size()) + L" 处同槽取首，其余已在列表标注）";
+        return o;
+    }
+    o.level = OutcomeLevel::Warn;
+    o.banner = L"应用结果不明确：写入 " + std::to_wstring(r.registry_written) + L"、失败 " +
+               std::to_wstring(r.registry_failed) + L"，SPI " +
+               (r.spi.performed && r.spi.called_ok ? L"成功" : L"未成功");
+    return o;
+}
+
+Outcome outcome_restore(uint32_t restored, uint32_t failed, uint32_t skipped, bool loaded, bool spi_ok) {
+    Outcome o;
+    if (!loaded) {
+        o.level = OutcomeLevel::Err;
+        o.banner = L"还原失败：没有可读的基线快照（可能从没应用过）。请用「复位默认」。";
+        return o;
+    }
+    if (failed == 0 && spi_ok) {
+        o.level = OutcomeLevel::Ok;
+        o.banner =
+            L"已还原 " + std::to_wstring(restored) + L" 项，系统指针回到你应用前的快照。";
+        return o;
+    }
+    o.level = OutcomeLevel::Warn;
+    o.banner = L"还原部分完成：成功 " + std::to_wstring(restored) + L"、失败 " +
+               std::to_wstring(failed) + L"、跳过 " + std::to_wstring(skipped) + L"。";
+    return o;
+}
+
+Outcome outcome_reset(uint32_t removed, uint32_t failed, bool spi_ok) {
+    Outcome o;
+    if (failed == 0 && spi_ok) {
+        o.level = OutcomeLevel::Ok;
+        o.banner = L"已复位：清除 " + std::to_wstring(removed) + L" 项，回到 Windows 默认方案。";
+        return o;
+    }
+    o.level = OutcomeLevel::Warn;
+    o.banner = L"复位部分完成：清除 " + std::to_wstring(removed) + L"、失败 " +
+               std::to_wstring(failed) + L"。";
+    return o;
 }
 
 }  // namespace cs::apply

@@ -29,6 +29,8 @@ using apply::PipelineOptions;
 using apply::PipelineResult;
 using apply::ReportView;
 using apply::SlotRow;
+using apply::RowKind;
+using apply::Outcome;
 
 // ---- 控件 ID（无业务含义，仅 WM_COMMAND 分发用）----
 enum : int {
@@ -55,6 +57,7 @@ enum {
 };
 
 struct UiState {
+    HWND hwnd = nullptr;
     HWND edit = nullptr;
     HWND list = nullptr;
     HWND summary = nullptr;
@@ -80,59 +83,102 @@ std::wstring edit_text(HWND edit) {
     return s;
 }
 
-// 从 ReportView 生成每槽一行文本，填进列表框 + 汇总。
+// 从 ReportView 生成每槽一行文本，填进列表框 + 汇总。状态用人话（不再只印内部码 [L1x]），
+// 失败行把 ASCII 原因（如「content is JPEG, not a PNG」）也带上，让用户当场看得懂。
 void render_report(UiState* st, const ReportView& v) {
     if (st->list) SendMessageW(st->list, LB_RESETCONTENT, 0, 0);
+    std::size_t applied = 0, bad = 0, rejected = 0, missing = 0;
     for (const SlotRow& row : v.rows) {
+        std::wstring tag;
+        switch (row.kind) {
+        case RowKind::Applied: tag = L"[可用]"; ++applied; break;
+        case RowKind::BadSource: tag = L"[源文件无效]"; ++bad; break;
+        case RowKind::LoaderRejected: tag = L"[加载器拒绝]"; ++rejected; break;
+        case RowKind::Missing: tag = L"[缺]"; ++missing; break;
+        }
         std::wstring line = L"  ";
-        line += (row.covered ? (row.l1_ok ? L"[OK]   " : L"[L1x]  ") : L"[MISS] ");
+        line += tag;
+        line += L" ";
         line += u8_to_w(row.display_name);
-        line += L"  (";
+        line += L" (";
         line += u8_to_w(row.registry_name);
         line += L")";
-        if (row.conflict) line += L"  冲突(取首)";
+        if (row.conflict) line += L"  同槽多文件(取首)";
+        if (row.covered && !row.l1_ok && !row.l1_detail.empty())
+            line += L"  —  " + u8_to_w(row.l1_detail);   // ASCII 也是合法 UTF-8
         if (st->list) SendMessageW(st->list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
     }
+    // 「可用」按 kind 精确计数，不能拿 covered_count（那会把解码失败的行也算成可用，谎报成功）。
     wchar_t buf[256];
-    swprintf(buf, 256, L"扫描 %u ｜ 覆盖 %zu ｜ 缺失 %zu ｜ 未认领 %zu ｜ 冲突 %zu ｜ 表外产物 %zu",
-             v.scanned, v.covered_count(), v.missing_count(), v.unclaimed.size(), v.conflicts.size(),
-             v.unmapped_produced.size());
+    swprintf(buf, 256, L"扫描 %u ｜ 可用 %zu ｜ 源无效 %zu ｜ 加载拒绝 %zu ｜ 缺 %zu ｜ 冲突 %zu ｜ 未认领 %zu",
+             v.scanned, applied, bad, rejected, missing, v.conflicts.size(), v.unclaimed.size());
     if (st->summary) SetWindowTextW(st->summary, buf);
+}
+
+// 动作结果横幅：文案来自模型层 outcome_*（与 CLI 同源、可单测），UI 只负责原样显示。
+void set_banner(UiState* st, const Outcome& o) {
+    if (st->cli_hint) SetWindowTextW(st->cli_hint, o.banner.c_str());
+}
+
+// 阻塞式动作前先把「正在…」画出来：WINDOWS 子系统下 apply 在主线程同步跑，
+// 不强制同步重绘的话这条“正在”会被动作本身盖掉，用户就只见结果、不见过程。
+void show_busy(UiState* st, const wchar_t* msg) {
+    if (st->cli_hint) SetWindowTextW(st->cli_hint, msg);
+    if (st->hwnd)
+        RedrawWindow(st->hwnd, nullptr, nullptr,
+                     RDW_ERASE | RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
 }
 
 // 只预览（build_only）：不写注册表、不触发 SPI。截图与打开窗口时都走这条安全路径。
 void preview_only(UiState* st) {
     const PipelineOptions opt = apply::make_live_opts(st->skin_dir, /*do_spi=*/false);
     const PipelineResult r = apply::build_only(opt);
-    const ReportView v = apply::make_report(r);
-    render_report(st, v);
+    render_report(st, apply::make_report(r));
+    set_banner(st, apply::outcome_preview(r));
+}
+
+// 刷新逐槽行/汇总（供还原/复位后重画列表用）；不回写横幅，横幅留给动作结果。
+void refresh_rows(UiState* st) {
+    const PipelineOptions opt = apply::make_live_opts(st->skin_dir, /*do_spi=*/false);
+    const PipelineResult r = apply::build_only(opt);
+    render_report(st, apply::make_report(r));
 }
 
 void do_apply(UiState* st) {
+    show_busy(st, L"正在应用…");
     const PipelineOptions opt = apply::make_live_opts(st->skin_dir, /*do_spi=*/true);
     const PipelineResult r = apply::apply_skin(opt);
-    const ReportView v = apply::make_report(r);
-    render_report(st, v);
+    render_report(st, apply::make_report(r));
+    set_banner(st, apply::outcome_apply(r));
 }
 
 void do_restore(UiState* st) {
+    show_busy(st, L"正在还原…");
     const PipelineOptions opt = apply::make_live_opts(st->skin_dir, /*do_spi=*/true);
     apply::SpiResult spi;
     bool loaded = false;
-    apply::restore_from_file(opt, spi, loaded);
-    if (!loaded) {
-        const PipelineOptions o2 = apply::make_live_opts(L"", false);
+    const apply::RestoreResult rr = apply::restore_from_file(opt, spi, loaded);
+    Outcome o;
+    if (loaded) {
+        o = apply::outcome_restore(rr.restored, rr.failed, rr.skipped, true,
+                                   spi.performed && spi.called_ok);
+    } else {
+        const PipelineOptions o2 = apply::make_live_opts(L"", /*do_spi=*/true);
         apply::SpiResult spi2;
-        apply::reset_default(o2, spi2);   // 无基线时的兜底出口
+        const apply::RestoreResult rz = apply::reset_default(o2, spi2);   // 无基线时的兜底出口
+        o = apply::outcome_reset(rz.restored, rz.failed, spi2.performed && spi2.called_ok);
     }
-    preview_only(st);
+    refresh_rows(st);
+    set_banner(st, o);   // 覆盖 preview 横幅，让结果行显示「刚刚这次还原/复位」成没成
 }
 
 void do_reset(UiState* st) {
+    show_busy(st, L"正在复位…");
     const PipelineOptions opt = apply::make_live_opts(st->skin_dir, /*do_spi=*/true);
     apply::SpiResult spi;
-    apply::reset_default(opt, spi);
-    preview_only(st);
+    const apply::RestoreResult rz = apply::reset_default(opt, spi);
+    refresh_rows(st);
+    set_banner(st, apply::outcome_reset(rz.restored, rz.failed, spi.performed && spi.called_ok));
 }
 
 HWND mk(HWND parent, const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w,
@@ -173,6 +219,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         auto* p = new UiState();
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(p));
         st = p;
+        p->hwnd = hwnd;   // show_busy 强制同步重绘要用主窗句柄
 
         HFONT font = CreateFontW(-14, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                                  CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
@@ -224,23 +271,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             if (!picked.empty()) {
                 st->skin_dir = picked;
                 if (st->edit) SetWindowTextW(st->edit, picked.c_str());
-                preview_only(st);   // 只 build_only，不碰注册表
-                if (st->cli_hint)
-                    SetWindowTextW(st->cli_hint,
-                                   (L"等价: cursorswitch --apply \"" + picked + L"\" (仅预览)").c_str());
+                preview_only(st);   // 只 build_only，不碰注册表；横幅由 outcome_preview 给出
             }
             return 0;
         }
         case IDC_PREVIEW_BTN:
             preview_only(st);
-            if (st->cli_hint)
-                SetWindowTextW(st->cli_hint, (L"等价: cursorswitch --apply \"" + st->skin_dir + L"\" (仅预览)")
-                                             .c_str());
             return 0;
         case IDC_APPLY_BTN:
             do_apply(st);
-            if (st->cli_hint)
-                SetWindowTextW(st->cli_hint, (L"等价: cursorswitch --apply \"" + st->skin_dir + L"\"").c_str());
             return 0;
         case IDC_RESTORE_BTN: {
             // D13：确认文案取自模型层 confirm_text_for（两还原两套），UI 不自己编。
@@ -251,7 +290,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 return 0;   // 取消 = 一个注册表写动作都不做
             }
             do_restore(st);
-            if (st->cli_hint) SetWindowTextW(st->cli_hint, L"等价: cursorswitch --restore");
             return 0;
         }
         case IDC_RESET_BTN: {
@@ -262,7 +300,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 return 0;
             }
             do_reset(st);
-            if (st->cli_hint) SetWindowTextW(st->cli_hint, L"等价: cursorswitch --reset");
             return 0;
         }
         default:

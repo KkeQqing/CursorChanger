@@ -58,6 +58,13 @@ struct ConfirmText {
 ConfirmText confirm_text_for(GuiAction a);
 
 // ---- 逐槽状态 + 结果面板（§324：部分认领是正常的，UI 要列出缺哪几槽）----
+// RowKind 是给 UI 的「人话」分类，取代以前把解码失败和加载器拒绝都塞进 [L1x] 的做法：
+//   Missing        —— 该槽没有任何被认领的源文件
+//   Applied        —— 有源、且产出的 .cur 被系统加载器接受（这一槽可用）
+//   BadSource      —— 源文件本身不行：解不出/光栅化被拒/writer 拒绝/落地写失败（含「伪 PNG=JPEG」）
+//   LoaderRejected —— 造出了 .cur 但 LoadCursorFromFileW 不接受（容器结构问题）
+enum class RowKind : uint8_t { Missing, Applied, BadSource, LoaderRejected };
+
 struct SlotRow {
     core::SlotId slot{core::SlotId::Invalid};
     std::string registry_name;   // ASCII，参与匹配（与 PipelineResult 的键同源）
@@ -69,6 +76,8 @@ struct SlotRow {
     bool l1_ok{false};           // covered 时该产物的 L1 结果
     std::wstring output_path;    // covered 时的产物绝对路径
     bool conflict{false};        // conflicts 里有与本槽 registry_name 相等的项
+    RowKind kind{RowKind::Missing};
+    std::string l1_detail;       // covered 时产物上的失败/原因文本（供 UI 直接显示，不再只回内部码）
 };
 
 struct ReportView {
@@ -89,5 +98,22 @@ struct ReportView {
 
 // 只读投影：不改动 r，不碰注册表。UI 与 CLI 报告都拿它渲染即得「一致」。
 ReportView make_report(const PipelineResult& r);
+
+// ---- 动作结果横幅（把「成没成」摆到界面上，不要求用户去翻命令行日志才知道，见 §9.2 GUI/CLI 同构）----
+enum class OutcomeLevel : uint8_t { Info, Ok, Warn, Err };
+
+struct Outcome {
+    OutcomeLevel level{OutcomeLevel::Info};
+    std::wstring banner;   // 单行人话，UI 直接显示；不掺 UI 自己的措辞（保证可被单测钉住）
+};
+
+// 预览（build_only，do_spi=false）：从没碰过系统指针，无论文件好坏都说明「未改动指针」。
+Outcome outcome_preview(const PipelineResult& r);
+// 应用：全链要么整体生效，要么在写注册表前中止。中止必须明说「指针未改动」+不合格数+原因。
+Outcome outcome_apply(const PipelineResult& r);
+// 还原 / 复位：UI 手上拿到的是 RestoreResult/SpiResult 的数字，这里按数字生成文案，保持可单测。
+Outcome outcome_restore(uint32_t restored, uint32_t failed, uint32_t skipped, bool loaded,
+                        bool spi_ok);
+Outcome outcome_reset(uint32_t removed, uint32_t failed, bool spi_ok);
 
 }  // namespace cs::apply

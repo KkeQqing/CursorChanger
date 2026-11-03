@@ -38,6 +38,30 @@ PngStatus load_png_to_spec(const uint8_t* data, std::size_t size, SlotId slot,
         return PngStatus::EmptyInput;
     }
 
+    // 扩展名是 .png 不代表内容真是 PNG —— 用户常把 JPEG 改名成 .png。stb 这里编成 STBI_ONLY_PNG，
+    // 拿到非 PNG 字节只会笼统回 "stb decode failed"，看不出「其实是 JPEG」，于是 GUI 只能显示一个
+    // 看不懂的内部码（这正是本轮要修的：别把含糊当已解释，DESIGN §8）。先嗅探魔数，命中已知格式就
+    // 报「内容是 X、不是 PNG」，让每条失败都落到可行动的人话上。
+    static const unsigned char kPngSig[8] = {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+    const bool is_png = size >= 8 && std::memcmp(data, kPngSig, 8) == 0;
+    if (!is_png) {
+        if (size >= 2 && data[0] == 0xFF && data[1] == 0xD8) {
+            detail = "content is JPEG (FF D8), not a PNG file";
+        } else if (size >= 3 && data[0] == 'G' && data[1] == 'I' && data[2] == 'F') {
+            detail = "content is GIF, not a PNG file";
+        } else if (size >= 2 && data[0] == 'B' && data[1] == 'M') {
+            detail = "content is BMP, not a PNG file";
+        } else if (size >= 12 && data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F' &&
+                   data[8] == 'W' && data[9] == 'E' && data[10] == 'B' && data[11] == 'P') {
+            detail = "content is WEBP, not a PNG file";
+        } else if (size >= 4 && data[0] == 0 && data[1] == 0 && (data[2] == 1 || data[2] == 2)) {
+            detail = "content is an ICO/CUR container, not a PNG file";
+        } else {
+            detail = "not a PNG file (magic bytes do not match); the .png name does not fit its content";
+        }
+        return PngStatus::DecodeFailed;
+    }
+
     int iw = 0, ih = 0, comp = 0;
     // 强制 4 通道：stb 对无 alpha 的 RGB 图会把 alpha 填成 255，
     // 于是 §4.2「无 alpha -> 完全不透明」不需要额外分支（少一处可能写错的规则）。
