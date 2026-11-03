@@ -59,4 +59,7 @@ void register_ani_cases(Runner& runner);
 // tests_m11.cpp：§5.3 `.meta` sidecar 纯解析 + 端到端接通（size/hotspot 改变产物，坏 key 挡写册前）
 void register_sidecar_cases(Runner& runner);
 
+// tests_m12.cpp：D21b `.ani` 合成 writer/reader（cur_reader + LoadCursorFromFileW 双独立 oracle）
+void register_ani_writer_cases(Runner& runner);
+
 }  // namespace cs::test

@@ -226,6 +226,8 @@ int main(int argc, char** argv) {
     cs::test::register_ani_cases(runner);
     // M11：§5.3 .meta sidecar 解析 + 端到端接通
     cs::test::register_sidecar_cases(runner);
+    // M12：D21b .ani 合成 writer/reader
+    cs::test::register_ani_writer_cases(runner);
 
     if (force_fail) {
         std::printf("[MODE] force-fail: injecting a case that must fail\n");

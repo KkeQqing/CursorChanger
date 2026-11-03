@@ -222,17 +222,21 @@ stb_image 解码（强制 4 通道）
 
 ```
 RIFF [size] "ACON"
-  "anih"  [36B = 9×DWORD] : cbSizeOf=36, dwFrames, dwSteps, dwFlags(ANSI_CURSOR=0),
-                            dwDefaultSpeed(rate), reserved, iCurCount, iIconCount, reserved
+  "anih"  [36B = 9×DWORD, 权威顺序] :
+      cbSizeOf=36, nFrames, nSteps, iWidth, iHeight, iBitCount, nPlanes, iDispRate, bfAttributes
+      iWidth/iHeight=0 => 用各帧自带尺寸; iDispRate = 帧率, 单位 jiffies(1/60s≈16.67ms);
+      bfAttributes bit0(0x01)=每帧是完整 CUR/ICO 文件; bit1(0x02)=有 seq 块(本实现不用)
   LIST  [size] "fram"
-      每帧一个 chunk，FourCC 实测为 "icon"（不是想当然的 "ani "），体 = 一个完整内嵌光标资源
-      (ICONDIR + CURSORDIR + DIB)，帧通过序号引用这些内嵌资源
+      每帧一个 chunk，FourCC 用 "icon"，体 = 一个完整内嵌光标资源(ICONDIR type=2 + CURSORDIR + DIB)
 ```
 
-> 结构来源是**反解本机 `C:\Windows\cursors\aero_busy.ani`**（`frames=18`、帧 chunk FourCC=`icon`、
-> `anih.speed=0`），**不是凭记忆**。实现期还须用真机确认帧序引用语义（`iCurNumber`/`iIconNumber`、
-> per-frame rate 的落点）与 **U7 上限**（最大帧数/尺寸/速率）。触顶必须**报错并拒产出**，
-> 不得静默截断帧序列（H9 精神：宁可失败，不可产「看着对」的残缺动画）。
+> 结构来源：本机 `C:\Windows\cursors\aero_busy.ani` 逐字节实测 `[36,18,18,0,0,32,1,3,1]`
+> （nFrames=18、iBitCount=32、**iDispRate=3 jiffies≈50ms/帧**、bfAttributes=1），并与多篇权威
+> 说明 + 一份 ANI2GIF 逐字节逆向交叉印证：帧率单位是 **jiffies 不是毫秒**、每帧内嵌一个完整 `.cur`。
+> （订正：本文件早前版本误把 `iDispRate` 标成 `dwDefaultSpeed` 并误读成"speed=0/帧率不在 header"，
+> 系字段贴错标签所致；正确字段如上。）
+> **仍须真机确认（U22）**：OS 是否按我们的 `iDispRate` 播放、以及 U7 的帧数/尺寸上限；触顶必须
+> **报错并拒产出**，不得静默截断帧序列（H9 精神：宁可失败，不可产「看着对」的残缺动画）。
 
 > **实现状态（V0.7）**：**4.4.1 透传已落地** —— `pipeline` 识别 `.ani` 扩展名、原样搬运不重编码、
 > 产出 `<槽名>.ani`、L1 以系统 `LoadCursorFromFileW` 作**独立 oracle**；坏 `.ani` 挡在写注册表前
@@ -389,7 +393,7 @@ hotspot = 3,1          ; 覆盖 §5.3 默认
 size = 32,48           ; 覆盖 D8 默认档位
 trim = none            ; 仅 SVG：none | auto
 frames = w0.png,w1.png,w2.png   ; 仅动画(D21b)：合成 .ani 的帧序列，路径相对本目录
-rate = 90              ; 仅动画(D21b)：每帧停留毫秒，0=交系统默认
+rate = 6              ; 仅动画(D21b)：每帧停留 jiffies（1 jiffy=1/60s≈16.67ms；6≈100ms，等待类常用 6~8；勿按毫秒填否则慢如卡死）
 ```
 
 未知 key → 报错（不忽略）；`hotspot` 越界 → 报错（§6 的 H5）。
@@ -603,7 +607,7 @@ CursorSwitch/
 | `watcher.debounce_ms` | `300` | D22 目录变更合并窗口（原「仅 BACKLOG watcher 用」的 `probe.debounce_ms` 归此） | M7 |
 | `watcher.enable` | `false` | D22 自动生效总开关，默认关 | M7 |
 | `watcher.backend` | `readdirchanges` | `ReadDirectoryChangesW`；轮询为后备 | M7 |
-| `ani.default_rate_ms` | `90` | D21b 合成 `.ani` 每帧默认停留 | M6 |
+| `ani.default_rate_jiffies` | `6` | D21b 合成 `.ani` 每帧默认停留（jiffies，1/60 秒；非毫秒） | M6 |
 | `ani.max_frames` | `待实测` | U7 上限；触顶**报错拒产出**、不静默截断 | M6 |
 | `ani.max_dimension` | `待实测` | U7 单帧尺寸上限；同上 | M6 |
 | `config.path` | `config/settings.ini` | D23 读取入口（行式，复用 baseline/.meta 语法）；文件缺失⇒全默认 | M6 |
