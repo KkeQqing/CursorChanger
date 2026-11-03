@@ -596,8 +596,8 @@ CursorSwitch/
 
 | key | 默认 | 说明 | 所属里程碑 |
 |---|---|---|---|
-| `frames.sizes` | `16,32,48` | 生成档位（D8）；**D23 起由 `settings.ini` 实际注入生效**（此前写死） | M1 / 生效于 M6 |
-| `frames.allow_upscale` | `false` | 小图不放大 | M3 |
+| `frames.sizes` | `16,32,48` | 生成档位（D8）；**D23 已落地：由 `config/settings.ini` 注入**（缺失=默认；坏文件=中止） | M1 / 生效 M6 |
+| `frames.allow_upscale` | `false` | 小图不放大；**暂不经 settings.ini 开放**（PNG/SVG 通道只做下采样，无放大实现；置 true 会 NoUsableFrame，故 settings 里按未知 key 拒） | M3 |
 | `svg.work_resolution` | `1024` | 光栅化工作分辨率 | M4 |
 | `svg.trim_transparent` | `auto` | 贴边（none/auto） | M4 |
 | `svg.min_content_ratio` | `0.35` | 内容占比低于此值 ⇒ 告警（出血启发） | M4 |
@@ -634,7 +634,7 @@ CursorSwitch/
 | M3 | V0.4 | PNG 通道（解码/预乘/缩放/多帧） | 对 `arrow.png` 夹具：L1 通过 + 目测无暗边（以 golden 像素断言替代：边缘半透明像素值在容差内）；无 alpha PNG 走 §4.2 规则且不产生透明洞 |
 | M4 | V0.5 | SVG 通道（**光栅器选型先落定**，见 B-01 + 特性守卫 + 出血/贴边） | 前置条件：D4 选型已被追认。§4.3.2 每条特性各有 1 个**必须被拒**的负对照；出血启发式在夹具上告警/不告警各 1 例；最终光栅器与其**不支持特性清单**写入本文 D4 与 §4.3.2 |
 | M5 | V0.6 | Win32 窗口：皮肤选择 / 逐槽状态 / 应用 / 两种还原 / 结果面板 | GUI 每个动作有等价 CLI 且两者结果一致；窗口截图存档；hotspot 目测校正闭环可用 |
-| M6 | V0.7 | 输出尺寸可配（D23，落地 `settings.ini`）+ `.meta` sidecar 首次解析 + `.ani` 通道（D21：透传 + 合成） | ① `settings.ini` 生效：改 `frames.sizes`/`allow_upscale` → 产出帧集随之变（单测，含 upscale 正/负）；② `.meta` 解析：`size/hotspot/trim/frames/rate` 生效、未知 key 报错（负对照）；③ `.ani` 透传槽 L1 可加载 **且** 真机 L3 观察到动画（核销 U7）；④ `.ani` 合成产物反解回读=RIFF ACON 同型，触 `ani.max_*` **报错拒产出、不截断** |
+| M6 | V0.7 | 输出尺寸可配（D23，落地 `settings.ini`）+ `.meta` sidecar 首次解析 + `.ani` 通道（D21：透传 + 合成） | ① `settings.ini` 生效：改 `frames.sizes` → 产出帧集随之变（单测 e2e 用 cur_reader 独立核）；坏 settings.ini ⇒ 中止不写册；`allow_upscale` 通道只做下采样、放大未实现故按未知 key 拒（见 §10）；② `.meta` 解析：`size/hotspot/trim/frames/rate` 生效、未知 key/坏值/越界报错（负对照）；③ `.ani` 透传 L1 可加载 **且** 真机确证会动画（U7 已核销）；④ `.ani` 合成：`LoadCursorFromFileW` 接受自造 .ani（离线）+ **真机确证按 `iDispRate`(jiffies) 播放**（U22 已核销）；`ani.max_frames` 触顶报错拒产出不截断 |
 | M7 | V0.8 | watcher 自动生效（D22） | ① 纯去抖/合并函数单测（喂时间戳事件序列→断言重放次数）；② 真机：改一个文件→去抖窗口后指针自动更新、关闭即停；③ 半写/风暴不产坏帧（D11+去抖），L1 失败仍中止不写册 |
 | — | **V1.0** | MVP 验收 | **15 个 v1 槽位**（§5.2 表，M2b 实测后的真实集合；原先写作 16/13 都是凭错误槽表得出的，已随实测纠正）用一套真素材全链路 apply→L3 逐槽通过→还原无残留。**验收范围随 §1 扩张**：动画/尺寸/watcher 的判据分别在 M6/M7 的**真机**条目里核销，不得因「加载成功」而判过 |
 

@@ -62,4 +62,7 @@ void register_sidecar_cases(Runner& runner);
 // tests_m12.cpp：D21b `.ani` 合成 writer/reader（cur_reader + LoadCursorFromFileW 双独立 oracle）
 void register_ani_writer_cases(Runner& runner);
 
+// tests_m13.cpp：D23 全局 config/settings.ini 解析 + 端到端生效（含 allow_upscale / 坏文件中止）
+void register_settings_cases(Runner& runner);
+
 }  // namespace cs::test

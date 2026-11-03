@@ -5,6 +5,7 @@
 #include "core/claim.h"
 #include "core/cur_writer.h"
 #include "core/png_source.h"
+#include "core/settings.h"
 #include "core/sidecar.h"
 #include "core/slots.h"
 #include "core/svg_source.h"
@@ -110,7 +111,8 @@ ExtKind ext_kind(const std::wstring& name) {
 // 把一个已认领的源文件变成 .cur 字节：.cur 透传；png/svg 走通道解码 -> CursorSpec -> CurWriter
 // 单点封装。任何一步失败都必须返回带**观测事实**的错误串，绝不产出「看起来对」的半坏文件（§4）。
 bool build_source_bytes(const std::wstring& source, core::SlotId slot, std::vector<uint8_t>& bytes,
-                        std::string& error, std::wstring& ext_out) {
+                        std::string& error, std::wstring& ext_out,
+                        const core::Settings& settings) {
     ext_out = L".cur";
     std::vector<uint8_t> raw;
     if (!read_file(source, raw)) {
@@ -173,6 +175,7 @@ bool build_source_bytes(const std::wstring& source, core::SlotId slot, std::vect
             std::string fdet;
             if (fkind == ExtKind::Png) {
                 core::PngOptions po;
+                if (settings.has_frames_sizes) po.sizes = settings.frames_sizes;
                 if (sc.has_size) po.sizes = sc.sizes;
                 if (sc.has_hotspot) { po.has_hotspot_override = true; po.hotspot_at_source = sc.hotspot; }
                 if (core::load_png_to_spec(fraw.data(), fraw.size(), slot, po, fs, fdet) !=
@@ -182,6 +185,7 @@ bool build_source_bytes(const std::wstring& source, core::SlotId slot, std::vect
                 }
             } else if (fkind == ExtKind::Svg) {
                 core::SvgOptions so;
+                if (settings.has_frames_sizes) so.sizes = settings.frames_sizes;
                 if (sc.has_size) so.sizes = sc.sizes;
                 if (sc.has_hotspot) { so.has_hotspot_override = true; so.hotspot_at_source = sc.hotspot; }
                 if (sc.has_trim) so.trim_transparent = (sc.trim == "auto");
@@ -220,7 +224,8 @@ bool build_source_bytes(const std::wstring& source, core::SlotId slot, std::vect
     std::string detail;
     if (kind == ExtKind::Png) {
         core::PngOptions po;   // 默认 sizes{16,32,48} + allow_upscale=false（§10 参数总表）
-        if (sc.has_size) po.sizes = sc.sizes;
+        if (settings.has_frames_sizes) po.sizes = settings.frames_sizes;
+        if (sc.has_size) po.sizes = sc.sizes;   // 槽位级 .meta 覆盖全局 settings
         if (sc.has_hotspot) { po.has_hotspot_override = true; po.hotspot_at_source = sc.hotspot; }
         const core::PngStatus st =
             core::load_png_to_spec(raw.data(), raw.size(), slot, po, spec, detail);
@@ -231,7 +236,8 @@ bool build_source_bytes(const std::wstring& source, core::SlotId slot, std::vect
         }
     } else if (kind == ExtKind::Svg) {
         core::SvgOptions so;   // 默认 work_resolution=1024 + sizes{16,32,48}（§10）
-        if (sc.has_size) so.sizes = sc.sizes;
+        if (settings.has_frames_sizes) so.sizes = settings.frames_sizes;
+        if (sc.has_size) so.sizes = sc.sizes;   // 槽位级 .meta 覆盖全局 settings
         if (sc.has_hotspot) { so.has_hotspot_override = true; so.hotspot_at_source = sc.hotspot; }
         if (sc.has_trim) so.trim_transparent = (sc.trim == "auto");
         core::SvgReport rep;
@@ -285,6 +291,26 @@ PipelineResult build_only(const PipelineOptions& opt) {
         r.aborted_before_registry = true;
         r.abort_reason = "no .cur/.png/.svg/.ani files in skin dir";
         return r;
+    }
+
+    // 全局 config/settings.ini（D23）：缺失 => 用内置默认档位；存在但解析失败 => 中止、绝不写册。
+    // 优先级：槽位级 .meta size= > 本 settings > 内置 {16,32,48}。
+    core::Settings settings;
+    {
+        std::wstring cfg = opt.settings_path;
+        if (cfg.empty()) cfg = exe_dir() + L"\\config\\settings.ini";
+        std::vector<uint8_t> craw;
+        if (read_file(cfg, craw)) {
+            const std::string ctext(craw.begin(), craw.end());
+            const core::SettingsParse sp = core::parse_settings(ctext, settings);
+            if (sp.status == core::SettingsStatus::Empty) {
+                settings = core::Settings{};
+            } else if (sp.status != core::SettingsStatus::Ok) {
+                r.aborted_before_registry = true;
+                r.abort_reason = "settings: " + sp.detail;
+                return r;
+            }
+        }
     }
 
     // 1) 认领。未认领与冲突都必须进报告，绝不静默缩水（DESIGN §4）。
@@ -345,7 +371,7 @@ PipelineResult build_only(const PipelineOptions& opt) {
         p.registry_name = c.registry_name;
         std::string cerr;
         std::wstring ext_out;
-        if (!build_source_bytes(c.source, c.slot, bytes, cerr, ext_out)) {
+        if (!build_source_bytes(c.source, c.slot, bytes, cerr, ext_out, settings)) {
             p.l1_ok = false;
             p.l1_detail = cerr;
             r.produced.push_back(p);

@@ -22,6 +22,9 @@ struct PipelineOptions {
     std::wstring sub_key;       // 真机 L"Control Panel\\Cursors"；测试用沙箱键
     std::wstring baseline_path; // 首次 apply 创建，之后不覆盖
     uint32_t spi_flags{0};      // U2：由调用方（探针）决定传 0 还是 SPIF_SENDCHANGE
+    // 真机方案键 + applied/state 相对布局的唯一定义处（M5b：GUI 与 CLI 共用）。
+    // settings_path 为空 => 默认 <exe_dir>\config\settings.ini（§10 / D23）。
+    std::wstring settings_path;
     // SPI_SETCURSORS 会**当场替换用户正在使用的指针**。它必须显式打开：
     // 沙箱测试用 false，把「写注册表的逻辑」和「影响真人的那一下」分开验证。
     bool do_spi{true};

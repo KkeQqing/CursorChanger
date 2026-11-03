@@ -228,6 +228,8 @@ int main(int argc, char** argv) {
     cs::test::register_sidecar_cases(runner);
     // M12：D21b .ani 合成 writer/reader
     cs::test::register_ani_writer_cases(runner);
+    // M13：D23 全局 config/settings.ini 解析 + 端到端
+    cs::test::register_settings_cases(runner);
 
     if (force_fail) {
         std::printf("[MODE] force-fail: injecting a case that must fail\n");
