@@ -36,3 +36,8 @@ __pycache__/
 
 # ---- 临时 ----
 *.tmp
+
+# ---- 交付包：exe+skin+用法的自包含拷贝，非源码，不入库 ----
+# （cursorswitch.exe 已被上方 *.exe 覆盖；此处连 skin 副本与说明一起忽略）
+dist/
+
