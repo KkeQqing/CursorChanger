@@ -7,6 +7,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <commctrl.h>   // InitCommonControlsEx：与 app.manifest 的 Common-Controls 6.0 依赖配对
 #include <objbase.h>   // CoInitializeEx / CoTaskMemFree
 #include <shlobj.h>    // SHBrowseForFolderW / SHGetPathFromIDListW / BROWSEINFOW
 
@@ -338,6 +339,13 @@ bool capture_window(HWND hwnd, const std::wstring& path) {
 }  // namespace
 
 int run_window() {
+    // comctl32 v6 视觉样式：manifest 声明了 Common-Controls 6.0 依赖，这里显式加载标准公共控件类，
+    // 二者配对才让 BUTTON/LISTBOX/EDIT 走主题化外观（D2）。缺任一侧都退回经典 Win95 方块。
+    INITCOMMONCONTROLSEX icc;
+    icc.dwSize = sizeof(icc);
+    icc.dwICC = ICC_STANDARD_CLASSES;
+    InitCommonControlsEx(&icc);
+
     const HRESULT co = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     WNDCLASSEXW wc;
     ZeroMemory(&wc, sizeof(wc));

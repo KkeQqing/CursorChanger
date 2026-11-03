@@ -1,0 +1,10 @@
+// src/app/app.rc -- application manifest resource (comctl32 v6 visual styles)
+//
+// id 1   = CREATEPROCESS_MANIFEST_RESOURCE_ID
+// type 24 = RT_MANIFEST
+// 用裸数字而不是 RT_MANIFEST 宏：rc.exe 对 RT_MANIFEST 的定义随 SDK 头文件版本漂移，
+// 数字形式无歧义、离线可构建（DESIGN D16）。路径 "app.manifest" 由 build.bat 传的
+// /i src\app 解析到同目录文件。
+//
+// 只承载 manifest，不放图标/版本信息：那是别的需求，不在本步夹带（AGENTS 2）。
+1 24 "app.manifest"

@@ -43,6 +43,13 @@ SET "VSLANG=1033"
 CALL "%VCVARS%"
 IF ERRORLEVEL 1 GOTO :L_FAIL_ENV
 
+REM ---- 3b. compile the application manifest resource (comctl32 v6 visual styles) ----
+REM   Closes the D2 gap deferred in M5b/M5c. rc.exe packs RT_MANIFEST(id 1) into a .res
+REM   that is linked into the app below. rc lives in the SDK bin dir vcvars just put on PATH.
+REM   /i src\app lets the bare "app.manifest" name in app.rc resolve to the sibling file.
+RC /nologo /i src\app /fo "%OUTDIR%\app.res" src\app\app.rc > "%OUTDIR%\compile-res.log" 2>&1
+IF ERRORLEVEL 1 GOTO :L_FAIL_RC
+
 REM ---- 4. compile app ----
 CL %FLAGS% /Fo%OUTDIR%\ src\core\cli.cpp src\core\ir.cpp src\core\slots.cpp src\core\claim.cpp ^
    src\core\pixel.cpp src\core\cur_writer.cpp src\core\png_source.cpp src\core\svg_guard.cpp src\core\svg_source.cpp ^
@@ -50,6 +57,7 @@ CL %FLAGS% /Fo%OUTDIR%\ src\core\cli.cpp src\core\ir.cpp src\core\slots.cpp src\
    src\apply\report_model.cpp ^
    src\selfcheck\l1.cpp src\selfcheck\verify_live.cpp ^
    src\app\verbs.cpp src\ui\main_window.cpp src\app\main.cpp ^
+   "%OUTDIR%\app.res" ^
    /Fe%OUTDIR%\%APP% /link user32.lib gdi32.lib advapi32.lib comctl32.lib shell32.lib ole32.lib /SUBSYSTEM:CONSOLE > "%OUTDIR%\compile-app.log" 2>&1
 IF ERRORLEVEL 1 GOTO :L_FAIL_COMPILE
 
@@ -109,6 +117,12 @@ IF EXIST "%OUTDIR%\compile-app.log" TYPE "%OUTDIR%\compile-app.log"
 ECHO --- compile-tests.log ---
 IF EXIST "%OUTDIR%\compile-tests.log" TYPE "%OUTDIR%\compile-tests.log"
 EXIT /B 4
+
+:L_FAIL_RC
+ECHO [FAIL] rc failed on the manifest resource, log follows
+ECHO --- compile-res.log ---
+IF EXIST "%OUTDIR%\compile-res.log" TYPE "%OUTDIR%\compile-res.log"
+EXIT /B 6
 
 :L_FAIL_SIZE
 ECHO [FAIL] artifact size gate failed, see the SIZE lines above
