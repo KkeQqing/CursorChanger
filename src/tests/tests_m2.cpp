@@ -203,6 +203,64 @@ void register_apply_cases(Runner& runner) {
         tear_down_sandbox();
     });
 
+    runner.add("m2_capture_filters_our_applied_paths", [](Runner& runner) {
+        // 循环污染防护：capture 时把「指向我们自己 applied 目录」的槽值识别为污染、不当作原始默认。
+        std::size_t n = 0;
+        const SlotSpec* t = slot_table(n);
+        const std::wstring arrow = wname(t[0].registry_name);   // 槽 0 = Arrow
+        const std::wstring hand = wname(t[5].registry_name);
+        reset_sandbox();
+        const std::wstring polluted = L"X:\\y\\applied\\Arrow.cur";   // 指向我们 applied 目录
+        const std::wstring user_cur = L"C:\\Users\\me\\mycursor.cur"; // 用户真实自定义（不在 applied 下）
+        CHECK(write_sz(Root::CurrentUser, kSandbox, arrow.c_str(), polluted.c_str()) == apply::WriteStatus::Ok);
+        CHECK(write_sz(Root::CurrentUser, kSandbox, hand.c_str(), user_cur.c_str()) == apply::WriteStatus::Ok);
+
+        // 不传 applied_dir（沙箱旧行为）：不过滤，污染值原样采到
+        const Baseline raw_b = capture_baseline(Root::CurrentUser, kSandbox);
+        std::size_t present0 = 0;
+        for (const SlotSnapshot& s : raw_b.slots) if (s.state == SlotState::ValuePresent) ++present0;
+        CHECK(present0 == 2);
+
+        // 传 applied_dir：指向 X:\y\applied 的 Arrow 应被过滤成 absent；用户真实路径保留 present
+        const Baseline b = capture_baseline(Root::CurrentUser, kSandbox, L"X:\\y\\applied");
+        std::size_t present = 0, absent = 0;
+        for (const SlotSnapshot& s : b.slots) {
+            if (s.state == SlotState::ValuePresent) ++present;
+            if (s.state == SlotState::ValueAbsent) ++absent;
+        }
+        CHECK(present == 1);   // 只剩用户那条，applied 那条被过滤
+        CHECK(absent == n - 1);
+        bool arrow_absent = false, hand_kept = false;
+        for (const SlotSnapshot& s : b.slots) {
+            if (s.slot == SlotId::Arrow) arrow_absent = (s.state == SlotState::ValueAbsent);
+            if (s.slot == SlotId::Hand) hand_kept = (s.state == SlotState::ValuePresent && s.value == user_cur);
+        }
+        CHECK(arrow_absent);   // 我们写的皮肤 -> 当作不存在
+        CHECK(hand_kept);      // 用户真实自定义 -> 原样保留，不误伤
+
+        // 端到端：HKCU 里已有 applied 污染 -> 按 apply 相同的采基线方式（带 applied_dir）采出干净
+        // 基线 -> 落盘 -> 读回还原 -> 该槽回到 absent（污染不作为「原始默认」被写回）。
+        std::wstring err;
+        const std::wstring applied = L"X:\\y\\applied";
+        PipelineOptions opt;
+        opt.root = Root::CurrentUser;
+        opt.sub_key = kSandbox;
+        opt.applied_dir = applied;
+        opt.baseline_path = L"build\\m2_loop_base.ini";
+        opt.do_spi = false;
+        const Baseline base = capture_baseline(Root::CurrentUser, kSandbox, opt.applied_dir.c_str());
+        CHECK(save_baseline(base, opt.baseline_path.c_str(), err));
+        Baseline back;
+        CHECK(load_baseline(back, opt.baseline_path.c_str(), err));
+        back.root = Root::CurrentUser;
+        back.sub_key = kSandbox;
+        const RestoreResult rr = restore_baseline(back);
+        CHECK(rr.failed == 0);
+        // Arrow 基线记 absent -> 还原删除它；polluted 不会作为「原始默认」被写回
+        CHECK(read_absent(Root::CurrentUser, kSandbox, arrow.c_str()));
+        tear_down_sandbox();
+    });
+
     runner.add("m2_baseline_file_roundtrip_and_corruption_refused", [](Runner& runner) {
         reset_sandbox();
         CHECK(write_sz(Root::CurrentUser, kSandbox, L"Arrow", L"C:\\a.cur") == apply::WriteStatus::Ok);

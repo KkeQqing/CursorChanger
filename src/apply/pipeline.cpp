@@ -447,7 +447,8 @@ PipelineResult apply_skin(const PipelineOptions& opt) {
         }
         r.baseline_preexisted = true;
     } else {
-        const Baseline snap = capture_baseline(opt.root, opt.sub_key.c_str());
+        const Baseline snap =
+            capture_baseline(opt.root, opt.sub_key.c_str(), opt.applied_dir.c_str(), kSchemeLabel);
         std::wstring err;
         r.baseline_saved = save_baseline(snap, opt.baseline_path.c_str(), err);
         if (!r.baseline_saved) {

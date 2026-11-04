@@ -97,6 +97,24 @@ void read_state(Root root, const std::wstring& sub_key, const wchar_t* name, std
     state = found ? SlotState::ValuePresent : SlotState::ValueAbsent;
 }
 
+// 基线采集的「循环污染」防护（DESIGN §7.2 R5 补强）：指向我们自己 applied 目录的槽值
+// 是我们写入的皮肤，绝不能当成「用户原始默认」存进基线；否则 restore 会写回该污染路径，
+// 且「首次不覆盖」会把它永久锁死。判定口径 = 规范化路径以 applied_dir 为前缀。
+// applied_dir 为空（沙箱/未提供）时一律返回 false，保持「不过滤」的旧行为。
+bool is_applied_prefix(const std::wstring& value, const std::wstring& dir) {
+    if (dir.empty() || value.empty()) return false;
+    auto norm = [](wchar_t c) { return (c == L'\\' || c == L'/') ? L'\\' : ::towlower(c); };
+    if (value.size() < dir.size()) return false;
+    for (std::size_t i = 0; i < dir.size(); ++i) {
+        if (norm(value[i]) != norm(dir[i])) return false;
+    }
+    if (dir.size() < value.size()) {
+        const wchar_t nxt = value[dir.size()];
+        if (nxt != L'\\' && nxt != L'/') return false;  // 前缀必须落在目录边界
+    }
+    return true;
+}
+
 bool put_line(FILE* f, const std::string& line) {
     return std::fwrite(line.data(), 1, line.size(), f) == line.size();
 }
@@ -110,10 +128,12 @@ std::wstring slot_name(std::size_t index) {
 
 }  // namespace
 
-Baseline capture_baseline(Root root, const wchar_t* sub_key) {
+Baseline capture_baseline(Root root, const wchar_t* sub_key, const wchar_t* ours_applied_dir,
+                          const wchar_t* /*ours_scheme_label*/) {
     Baseline b;
     b.root = root;
     b.sub_key = sub_key ? sub_key : L"";
+    const std::wstring applied_dir = ours_applied_dir ? ours_applied_dir : L"";
 
     bool exists = false;
     const QueryResult k = key_exists(root, b.sub_key.c_str(), exists);
@@ -127,6 +147,12 @@ Baseline capture_baseline(Root root, const wchar_t* sub_key) {
         s.slot = table[i].id;
         const std::wstring name(table[i].registry_name.begin(), table[i].registry_name.end());
         read_state(root, b.sub_key, name.c_str(), s.value, s.state, b.key_absent_before);
+        // 指向我们 applied 目录的值 ⇒ 是我们自己的皮肤，按「值原本不存在」采集：restore 会删除
+        // 它、回到真·系统默认，而不是写回污染路径。用户真实自定义的光标（不在 applied_dir 下）不受影响。
+        if (s.state == SlotState::ValuePresent && is_applied_prefix(s.value, applied_dir)) {
+            s.state = SlotState::ValueAbsent;
+            s.value.clear();
+        }
         b.slots.push_back(s);
     }
     for (const wchar_t* extra : {static_cast<const wchar_t*>(L""), kSchemeValue}) {

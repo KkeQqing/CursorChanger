@@ -42,7 +42,11 @@ struct Baseline {
 };
 
 // 只读采集。不会对注册表做任何修改。
-Baseline capture_baseline(Root root, const wchar_t* sub_key);
+// ours_applied_dir：指向该目录的槽值是我们自己写入的皮肤，采集时按「值不存在」记录，
+//   避免把污染路径当成用户原始默认存进基线（循环污染，DESIGN §7.2 R5 补强）。传空 = 不过滤。
+Baseline capture_baseline(Root root, const wchar_t* sub_key,
+                          const wchar_t* ours_applied_dir = nullptr,
+                          const wchar_t* ours_scheme_label = nullptr);
 
 // 文本格式：制表符分隔，第一行是键状态。路径含冒号与反斜杠，故不用 '=' 做分隔。
 bool save_baseline(const Baseline& b, const wchar_t* path, std::wstring& error);

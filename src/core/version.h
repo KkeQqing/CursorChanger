@@ -4,6 +4,6 @@
 #pragma once
 
 namespace cs::core {
-inline constexpr const char* kVersion = "0.8.0";
+inline constexpr const char* kVersion = "1.0.0";
 inline constexpr const char* kBuildFlags = "c++17 /MT static-crt / SUBSYSTEM:WINDOWS(app)+CONSOLE(tests)";
 }  // namespace cs::core
