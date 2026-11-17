@@ -41,3 +41,12 @@ __pycache__/
 # （cursorswitch.exe 已被上方 *.exe 覆盖；此处连 skin 副本与说明一起忽略）
 dist/
 
+# auto-added ignore rules
+.idea/
+*.iml
+*.ipr
+*.iws
+Thumbs.db
+desktop.ini
+.DS_Store
+*.log
